@@ -443,7 +443,7 @@ textarea:focus {
 
 .gantt-row {
   display: grid;
-  grid-template-columns: 82px 86px minmax(180px, 1fr) minmax(360px, 1.4fr);
+  grid-template-columns: 92px minmax(220px, 0.8fr) minmax(460px, 1.7fr);
   min-width: 820px;
   border-top: 1px solid var(--line);
   font-size: 13px;
@@ -1138,7 +1138,7 @@ textarea:focus {
   }
 
   .gantt-row {
-    grid-template-columns: 72px 76px minmax(160px, 1fr) minmax(280px, 1.3fr);
+    grid-template-columns: 82px minmax(180px, 0.8fr) minmax(340px, 1.4fr);
     min-width: 680px;
   }
 }

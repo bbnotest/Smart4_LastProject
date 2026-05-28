@@ -596,7 +596,6 @@ function renderGanttGroup(title, rows, range, ticks) {
       <h3>${escapeHtml(title)}</h3>
       <div class="gantt-table">
         <div class="gantt-row gantt-header">
-          <span>작업구분</span>
           <span>작업자</span>
           <span>작업</span>
           <div class="gantt-timeline gantt-ticks" style="${timelineStyle}">
@@ -611,14 +610,15 @@ function renderGanttGroup(title, rows, range, ticks) {
 
 function renderGanttRow(row, range, tickCount) {
   const days = Math.max(1, tickCount);
-  const targetDate = row.hasDeadline ? row.end : row.start;
-  const dayIndex = Math.max(0, Math.min(days - 1, daysBetween(range.min, targetDate)));
-  const left = (dayIndex / days) * 100;
-  const width = 100 / days;
+  const startIndex = Math.max(0, Math.min(days - 1, daysBetween(range.min, row.start)));
+  const endIndex = row.hasDeadline
+    ? Math.max(startIndex, Math.min(days - 1, daysBetween(range.min, row.end)))
+    : startIndex;
+  const left = (startIndex / days) * 100;
+  const width = ((endIndex - startIndex + 1) / days) * 100;
   const timelineStyle = `--gantt-days:${days};`;
   return `
     <div class="gantt-row ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}">
-      <span><b>${escapeHtml(row.part)}</b></span>
       <span>${escapeHtml(row.student)}</span>
       <span title="${escapeHtml(row.task.title)}">${escapeHtml(row.task.title)}</span>
       <div class="gantt-timeline" style="${timelineStyle}">
