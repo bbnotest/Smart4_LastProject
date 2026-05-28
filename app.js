@@ -533,6 +533,7 @@ function ganttRows(entries) {
       const deadline = deadlineToDate(task.deadline);
       const hasDeadline = !Number.isNaN(deadline.getTime());
       const end = hasDeadline ? deadline : start;
+      const isDueToday = hasDeadline && sameDate(deadline, new Date());
       return {
         part: entry.part || "파트 미지정",
         student: entry.student,
@@ -541,7 +542,8 @@ function ganttRows(entries) {
         end: end < start ? start : end,
         date: entry.date,
         role: getRole(entry),
-        hasDeadline
+        hasDeadline,
+        isDueToday
       };
     }))
     .sort((a, b) => {
@@ -560,8 +562,10 @@ function ganttRows(entries) {
 function ganttRange(rows) {
   const starts = rows.map((row) => row.start.getTime()).filter(Boolean);
   const ends = rows.map((row) => row.end.getTime()).filter(Boolean);
-  const min = new Date(Math.min(...starts, ...ends));
-  const max = new Date(Math.max(...starts, ...ends));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const min = new Date(Math.min(...starts, ...ends, today.getTime()));
+  const max = new Date(Math.max(...starts, ...ends, today.getTime()));
   if (sameDate(min, max)) {
     max.setDate(max.getDate() + 1);
   }
@@ -595,7 +599,7 @@ function renderGanttGroup(title, rows, range, ticks) {
           <span>작업자</span>
           <span>작업</span>
           <div class="gantt-timeline gantt-ticks">
-            ${ticks.map((tick) => `<span>${escapeHtml(formatMonthDay(tick))}</span>`).join("")}
+            ${ticks.map((tick) => `<span class="${sameDate(tick, new Date()) ? "is-today" : ""}">${escapeHtml(formatMonthDay(tick))}</span>`).join("")}
           </div>
         </div>
         ${rows.length ? rows.map((row) => renderGanttRow(row, range)).join("") : `<div class="task-summary-empty">등록된 작업 없음</div>`}
@@ -606,14 +610,14 @@ function renderGanttGroup(title, rows, range, ticks) {
 
 function renderGanttRow(row, range) {
   const left = Math.max(0, Math.min(100, ((row.start - range.min) / (range.max - range.min)) * 100));
-  const width = Math.max(3, Math.min(100 - left, ((row.end - row.start) / (range.max - range.min)) * 100 || 3));
+  const width = Math.max(4, Math.min(100 - left, ((row.end - row.start) / (range.max - range.min)) * 100 || 4));
   return `
-    <div class="gantt-row ${row.hasDeadline ? "" : "is-unscheduled"}">
+    <div class="gantt-row ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}">
       <span><b>${escapeHtml(row.part)}</b></span>
       <span>${escapeHtml(row.student)}</span>
       <span title="${escapeHtml(row.task.title)}">${escapeHtml(row.task.title)}</span>
       <div class="gantt-timeline">
-        <div class="gantt-bar ${row.part === "플밍" ? "is-dev" : ""} ${row.hasDeadline ? "" : "is-unscheduled"}" style="${row.hasDeadline ? `left:${left.toFixed(2)}%;width:${width.toFixed(2)}%;` : ""}">
+        <div class="gantt-bar ${row.part === "플밍" ? "is-dev" : ""} ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}" style="${row.hasDeadline ? `--bar-left:${left.toFixed(2)}%;--bar-width:${width.toFixed(2)}%;` : ""}">
           <span>${escapeHtml(formatDeadline(row.task.deadline, row.task.deadlineText))}</span>
         </div>
       </div>
@@ -662,6 +666,7 @@ function renderTeamEntry(entry) {
 
 function renderTask(task, muted = false, includeComment = false, entry = null) {
   const overdue = isOverdue(task.deadline);
+  const note = meaningfulNote(task.note);
   const commentKey = entry
     ? `task-comment:${entry.team}:${entry.date}:${entry.student}:${task.title}`
     : "";
@@ -672,7 +677,7 @@ function renderTask(task, muted = false, includeComment = false, entry = null) {
         <div class="task-name">${escapeHtml(task.title)}</div>
         <div class="task-deadline ${overdue ? "danger" : ""}">${escapeHtml(formatDeadline(task.deadline, task.deadlineText))}</div>
       </div>
-      <p class="task-note">특이사항: ${escapeHtml(task.note || "없음")}</p>
+      ${note ? `<p class="task-note">특이사항: ${escapeHtml(note)}</p>` : ""}
       ${includeComment ? `
         <label class="task-comment">
           코멘트
@@ -690,7 +695,6 @@ function renderEmptyTask(message, muted = false) {
         <div class="task-name">${escapeHtml(message)}</div>
         <div class="task-deadline">미정</div>
       </div>
-      <p class="task-note">특이사항: 없음</p>
     </div>
   `;
 }
@@ -710,11 +714,30 @@ function renderStudentHistory() {
   const history = state.entries
     .filter((entry) => entry.student === selected)
     .sort((a, b) => b.date.localeCompare(a.date));
+  const chronological = [...history].sort((a, b) => a.date.localeCompare(b.date));
+  if (state.historyIndex < 0) {
+    state.historyIndex = Math.max(0, chronological.length - 1);
+  }
+  if (state.historyIndex >= chronological.length) {
+    state.historyIndex = Math.max(0, chronological.length - 1);
+  }
   els.studentHistory.innerHTML = `
-    ${state.studentMode === "overview" ? renderOverviewPanel(selected, history) : renderChroniclePanel(selected, history)}
+    ${state.studentMode === "overview" ? renderOverviewPanel(selected, chronological) : renderChroniclePanel(selected, history)}
   `;
 
   if (state.studentMode === "overview") {
+    document.querySelector("#historyPrev")?.addEventListener("click", () => {
+      state.historyIndex = Math.max(0, state.historyIndex - 1);
+      renderStudentHistory();
+    });
+
+    document.querySelector("#historyNext")?.addEventListener("click", () => {
+      state.historyIndex = Math.min(chronological.length - 1, state.historyIndex + 1);
+      renderStudentHistory();
+    });
+
+    bindHistorySwipe(chronological.length);
+
     document.querySelectorAll(".task-comment-input").forEach((input) => {
       input.addEventListener("input", () => {
         localStorage.setItem(input.dataset.commentKey, input.value);
@@ -800,6 +823,10 @@ function renderOverviewPanel(selected, history) {
   const rows = ganttRows(history);
   const range = rows.length ? ganttRange(rows) : null;
   const ticks = range ? ganttTicks(range) : [];
+  const activeIndex = state.historyIndex;
+  const previous = history[activeIndex - 1] || null;
+  const active = history[activeIndex] || null;
+  const next = history[activeIndex + 1] || null;
   return `
     <section class="history-panel personal-gantt-panel">
       <div class="task-summary-head">
@@ -809,6 +836,22 @@ function renderOverviewPanel(selected, history) {
       ${rows.length ? `
         <div class="gantt-board">
           ${renderGanttGroup("개인 작업", rows, range, ticks)}
+        </div>
+      ` : `<div class="empty-state">히스토리가 없습니다.</div>`}
+    </section>
+    <section class="history-panel history-carousel">
+      <div class="history-carousel-head">
+        <h2>${escapeHtml(selected)} 날짜별 작업</h2>
+        <div class="carousel-controls">
+          <button id="historyPrev" class="icon-button" type="button" aria-label="과거 날짜" ${activeIndex === 0 ? "disabled" : ""}>‹</button>
+          <button id="historyNext" class="icon-button" type="button" aria-label="최신 날짜" ${activeIndex >= history.length - 1 ? "disabled" : ""}>›</button>
+        </div>
+      </div>
+      ${history.length ? `
+        <div class="slot-track">
+          ${renderHistorySlot(previous, "side")}
+          ${renderHistorySlot(active, "active")}
+          ${renderHistorySlot(next, "side")}
         </div>
       ` : `<div class="empty-state">히스토리가 없습니다.</div>`}
     </section>
@@ -839,7 +882,7 @@ function renderChronicleItem(entry) {
             <li>
               <span>${escapeHtml(task.title)}</span>
               <small>${escapeHtml(formatDeadline(task.deadline, task.deadlineText))}</small>
-              <p>특이사항: ${escapeHtml(task.note || "없음")}</p>
+              ${meaningfulNote(task.note) ? `<p>특이사항: ${escapeHtml(meaningfulNote(task.note))}</p>` : ""}
             </li>
           `).join("") : `<li><span>등록된 작업 없음</span></li>`}
         </ul>
@@ -986,6 +1029,12 @@ function unique(values) {
 
 function clean(value) {
   return String(value ?? "").trim();
+}
+
+function meaningfulNote(value) {
+  const note = clean(value);
+  if (!note || note === "없음" || note === "X" || note === "-") return "";
+  return note;
 }
 
 function slug(value) {
