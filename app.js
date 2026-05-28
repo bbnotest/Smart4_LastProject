@@ -53,6 +53,7 @@ const state = {
   comments: [],
   user: null,
   view: "team",
+  teamMode: "overview",
   part: "all",
   selectedStudent: "",
   historyTeam: "1팀",
@@ -79,6 +80,8 @@ const els = {
   teamTab: document.querySelector("#teamTab"),
   studentTab: document.querySelector("#studentTab"),
   adminTab: document.querySelector("#adminTab"),
+  teamOverviewTab: document.querySelector("#teamOverviewTab"),
+  teamDailyTab: document.querySelector("#teamDailyTab"),
   overviewTab: document.querySelector("#overviewTab"),
   historyTab: document.querySelector("#historyTab"),
   studentSearchInput: document.querySelector("#studentSearchInput"),
@@ -163,6 +166,8 @@ els.adminTab.addEventListener("click", () => {
     setView("admin");
   }
 });
+els.teamOverviewTab.addEventListener("click", () => setTeamMode("overview"));
+els.teamDailyTab.addEventListener("click", () => setTeamMode("daily"));
 els.overviewTab.addEventListener("click", () => setStudentMode("overview"));
 els.historyTab.addEventListener("click", () => setStudentMode("history"));
 els.studentSearchInput.addEventListener("input", () => {
@@ -178,6 +183,13 @@ function setStudentMode(mode) {
   els.overviewTab.classList.toggle("is-active", mode === "overview");
   els.historyTab.classList.toggle("is-active", mode === "history");
   renderStudentHistory();
+}
+
+function setTeamMode(mode) {
+  state.teamMode = mode;
+  els.teamOverviewTab.classList.toggle("is-active", mode === "overview");
+  els.teamDailyTab.classList.toggle("is-active", mode === "daily");
+  render();
 }
 
 els.historyTeamFilter.addEventListener("change", () => {
@@ -360,8 +372,14 @@ function render() {
   syncFilterOptions();
   const entries = filteredEntries();
   renderTodayNotice();
-  renderTeamTaskSummary(entries);
-  renderTeamList(entries);
+  els.dateStrip.classList.toggle("is-hidden", state.teamMode !== "daily");
+  if (state.teamMode === "overview") {
+    renderTeamOverview(teamOverviewEntries());
+    els.teamList.innerHTML = "";
+  } else {
+    els.teamTaskSummary.innerHTML = "";
+    renderTeamList(entries);
+  }
   renderStudentHistory();
 }
 
@@ -452,6 +470,12 @@ function filteredEntries() {
   }).sort((a, b) => b.date.localeCompare(a.date) || a.team.localeCompare(b.team) || a.student.localeCompare(b.student));
 }
 
+function teamOverviewEntries() {
+  return state.entries
+    .filter((entry) => state.filters.team === "all" || entry.team === state.filters.team)
+    .sort((a, b) => a.date.localeCompare(b.date) || compareByRole(a, b));
+}
+
 function renderTeamList(entries) {
   const teamEntries = entries.sort(compareByRole);
   const plannedEntries = teamEntries.filter((entry) => entry.part === "기획");
@@ -477,56 +501,123 @@ function renderTeamList(entries) {
   });
 }
 
-function renderTeamTaskSummary(entries) {
-  const planRows = taskSummaryRows(entries.filter((entry) => entry.part === "기획"));
-  const devRows = taskSummaryRows(entries.filter((entry) => entry.part === "플밍"));
-  const rows = [...planRows, ...devRows];
+function renderTeamOverview(entries) {
+  const rows = ganttRows(entries);
 
   if (!rows.length) {
-    els.teamTaskSummary.innerHTML = `<div class="empty-state">선택 날짜에 등록된 작업이 없습니다.</div>`;
+    els.teamTaskSummary.innerHTML = `<div class="empty-state">등록된 작업 데이터가 없습니다.</div>`;
     return;
   }
 
+  const range = ganttRange(rows);
+  const ticks = ganttTicks(range);
+  const planRows = rows.filter((row) => row.part === "기획");
+  const devRows = rows.filter((row) => row.part === "플밍");
+
   els.teamTaskSummary.innerHTML = `
     <div class="task-summary-head">
-      <h2>전체 작업 목록</h2>
-      <span>${escapeHtml(state.filters.date)}</span>
+      <h2>${escapeHtml(state.filters.team)} 작업 개요</h2>
+      <span>${escapeHtml(range.label)}</span>
     </div>
-    <div class="task-summary-split">
-      ${renderTaskSummaryTable("기획", planRows)}
-      ${renderTaskSummaryTable("플밍", devRows)}
+    <div class="gantt-board">
+      ${renderGanttGroup("기획", planRows, range, ticks)}
+      ${renderGanttGroup("플밍", devRows, range, ticks)}
     </div>
   `;
 }
 
-function taskSummaryRows(entries) {
-  return entries.flatMap((entry) => {
-    return entry.tasks.map((task) => ({
-      task,
-      entry
-    }));
-  });
+function ganttRows(entries) {
+  return entries
+    .flatMap((entry) => entry.tasks.map((task) => {
+      const start = dateFromKey(entry.date);
+      const deadline = deadlineToDate(task.deadline);
+      const hasDeadline = !Number.isNaN(deadline.getTime());
+      const end = hasDeadline ? deadline : start;
+      return {
+        part: entry.part || "파트 미지정",
+        student: entry.student,
+        task,
+        start,
+        end: end < start ? start : end,
+        date: entry.date,
+        role: getRole(entry),
+        hasDeadline
+      };
+    }))
+    .sort((a, b) => {
+      const partDiff = (a.part === "기획" ? 0 : 1) - (b.part === "기획" ? 0 : 1);
+      if (partDiff) return partDiff;
+      const roleOrder = { "팀장": 0, "PM": 1, "팀원": 2 };
+      const roleDiff = (roleOrder[a.role] ?? 9) - (roleOrder[b.role] ?? 9);
+      if (roleDiff) return roleDiff;
+      return a.student.localeCompare(b.student)
+        || Number(b.hasDeadline) - Number(a.hasDeadline)
+        || a.start - b.start
+        || a.task.title.localeCompare(b.task.title);
+    });
 }
 
-function renderTaskSummaryTable(title, rows) {
+function ganttRange(rows) {
+  const starts = rows.map((row) => row.start.getTime()).filter(Boolean);
+  const ends = rows.map((row) => row.end.getTime()).filter(Boolean);
+  const min = new Date(Math.min(...starts, ...ends));
+  const max = new Date(Math.max(...starts, ...ends));
+  if (sameDate(min, max)) {
+    max.setDate(max.getDate() + 1);
+  }
+  min.setHours(0, 0, 0, 0);
+  max.setHours(23, 59, 59, 999);
+  return {
+    min,
+    max,
+    days: Math.max(1, Math.ceil((max - min) / 86400000)),
+    label: `${dateKey(min)} ~ ${dateKey(max)}`
+  };
+}
+
+function ganttTicks(range) {
+  const ticks = [];
+  const cursor = new Date(range.min);
+  while (cursor <= range.max && ticks.length < 45) {
+    ticks.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return ticks;
+}
+
+function renderGanttGroup(title, rows, range, ticks) {
   return `
-    <section class="task-summary-group">
+    <section class="gantt-group">
       <h3>${escapeHtml(title)}</h3>
-      <div class="task-summary-table">
-        <div class="task-summary-row task-summary-header">
+      <div class="gantt-table">
+        <div class="gantt-row gantt-header">
+          <span>작업구분</span>
+          <span>작업자</span>
           <span>작업</span>
-          <span>마감일</span>
-          <span>담당자</span>
-        </div>
-        ${rows.length ? rows.map(({ task, entry }) => `
-          <div class="task-summary-row">
-            <span>${escapeHtml(task.title)}</span>
-          <span>${escapeHtml(formatDeadline(task.deadline, task.deadlineText) || "미정")}</span>
-            <span>${escapeHtml(entry.student)}</span>
+          <div class="gantt-timeline gantt-ticks">
+            ${ticks.map((tick) => `<span>${escapeHtml(formatMonthDay(tick))}</span>`).join("")}
           </div>
-        `).join("") : `<div class="task-summary-empty">등록된 작업 없음</div>`}
+        </div>
+        ${rows.length ? rows.map((row) => renderGanttRow(row, range)).join("") : `<div class="task-summary-empty">등록된 작업 없음</div>`}
       </div>
     </section>
+  `;
+}
+
+function renderGanttRow(row, range) {
+  const left = Math.max(0, Math.min(100, ((row.start - range.min) / (range.max - range.min)) * 100));
+  const width = Math.max(3, Math.min(100 - left, ((row.end - row.start) / (range.max - range.min)) * 100 || 3));
+  return `
+    <div class="gantt-row ${row.hasDeadline ? "" : "is-unscheduled"}">
+      <span><b>${escapeHtml(row.part)}</b></span>
+      <span>${escapeHtml(row.student)}</span>
+      <span title="${escapeHtml(row.task.title)}">${escapeHtml(row.task.title)}</span>
+      <div class="gantt-timeline">
+        <div class="gantt-bar ${row.part === "플밍" ? "is-dev" : ""} ${row.hasDeadline ? "" : "is-unscheduled"}" style="${row.hasDeadline ? `left:${left.toFixed(2)}%;width:${width.toFixed(2)}%;` : ""}">
+          <span>${escapeHtml(formatDeadline(row.task.deadline, row.task.deadlineText))}</span>
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -579,7 +670,7 @@ function renderTask(task, muted = false, includeComment = false, entry = null) {
     <div class="task-card ${muted ? "is-muted" : ""}">
       <div class="task-card-head">
         <div class="task-name">${escapeHtml(task.title)}</div>
-        <div class="task-deadline ${overdue ? "danger" : ""}">${escapeHtml(formatDeadline(task.deadline, task.deadlineText) || "마감일 미정")}</div>
+        <div class="task-deadline ${overdue ? "danger" : ""}">${escapeHtml(formatDeadline(task.deadline, task.deadlineText))}</div>
       </div>
       <p class="task-note">특이사항: ${escapeHtml(task.note || "없음")}</p>
       ${includeComment ? `
@@ -597,7 +688,7 @@ function renderEmptyTask(message, muted = false) {
     <div class="task-card ${muted ? "is-muted" : ""}">
       <div class="task-card-head">
         <div class="task-name">${escapeHtml(message)}</div>
-        <div class="task-deadline">마감일 미정</div>
+        <div class="task-deadline">미정</div>
       </div>
       <p class="task-note">특이사항: 없음</p>
     </div>
@@ -619,30 +710,11 @@ function renderStudentHistory() {
   const history = state.entries
     .filter((entry) => entry.student === selected)
     .sort((a, b) => b.date.localeCompare(a.date));
-  const chronological = [...history].sort((a, b) => a.date.localeCompare(b.date));
-  if (state.historyIndex < 0) {
-    state.historyIndex = Math.max(0, chronological.length - 1);
-  }
-  if (state.historyIndex >= chronological.length) {
-    state.historyIndex = Math.max(0, chronological.length - 1);
-  }
   els.studentHistory.innerHTML = `
-    ${state.studentMode === "overview" ? renderOverviewPanel(selected, chronological) : renderChroniclePanel(selected, history)}
+    ${state.studentMode === "overview" ? renderOverviewPanel(selected, history) : renderChroniclePanel(selected, history)}
   `;
 
   if (state.studentMode === "overview") {
-    document.querySelector("#historyPrev")?.addEventListener("click", () => {
-      state.historyIndex = Math.max(0, state.historyIndex - 1);
-      renderStudentHistory();
-    });
-
-    document.querySelector("#historyNext")?.addEventListener("click", () => {
-      state.historyIndex = Math.min(chronological.length - 1, state.historyIndex + 1);
-      renderStudentHistory();
-    });
-
-    bindHistorySwipe(chronological.length);
-
     document.querySelectorAll(".task-comment-input").forEach((input) => {
       input.addEventListener("input", () => {
         localStorage.setItem(input.dataset.commentKey, input.value);
@@ -725,24 +797,18 @@ function firstStudentInTeam(team) {
 }
 
 function renderOverviewPanel(selected, history) {
-  const activeIndex = state.historyIndex;
-  const previous = history[activeIndex - 1] || null;
-  const active = history[activeIndex] || null;
-  const next = history[activeIndex + 1] || null;
+  const rows = ganttRows(history);
+  const range = rows.length ? ganttRange(rows) : null;
+  const ticks = range ? ganttTicks(range) : [];
   return `
-    <section class="history-panel history-carousel">
-      <div class="history-carousel-head">
-        <h2>${escapeHtml(selected)} 날짜별 작업</h2>
-        <div class="carousel-controls">
-          <button id="historyPrev" class="icon-button" type="button" aria-label="과거 날짜" ${activeIndex === 0 ? "disabled" : ""}>‹</button>
-          <button id="historyNext" class="icon-button" type="button" aria-label="최신 날짜" ${activeIndex >= history.length - 1 ? "disabled" : ""}>›</button>
-        </div>
+    <section class="history-panel personal-gantt-panel">
+      <div class="task-summary-head">
+        <h2>${escapeHtml(selected)} 작업 개요</h2>
+        <span>${escapeHtml(range?.label || "작업 없음")}</span>
       </div>
-      ${history.length ? `
-        <div class="slot-track">
-          ${renderHistorySlot(previous, "side")}
-          ${renderHistorySlot(active, "active")}
-          ${renderHistorySlot(next, "side")}
+      ${rows.length ? `
+        <div class="gantt-board">
+          ${renderGanttGroup("개인 작업", rows, range, ticks)}
         </div>
       ` : `<div class="empty-state">히스토리가 없습니다.</div>`}
     </section>
@@ -772,7 +838,7 @@ function renderChronicleItem(entry) {
           ${entry.tasks.length ? entry.tasks.map((task) => `
             <li>
               <span>${escapeHtml(task.title)}</span>
-              <small>${escapeHtml(formatDeadline(task.deadline, task.deadlineText) || "마감일 미정")}</small>
+              <small>${escapeHtml(formatDeadline(task.deadline, task.deadlineText))}</small>
               <p>특이사항: ${escapeHtml(task.note || "없음")}</p>
             </li>
           `).join("") : `<li><span>등록된 작업 없음</span></li>`}
@@ -954,17 +1020,11 @@ function deadlineToDate(value) {
 }
 
 function formatDeadline(value, fallback = "") {
-  if (!value) return fallback;
-  if (typeof value === "string" && Number.isNaN(new Date(value).getTime())) {
-    return fallback || value;
-  }
+  if (!value) return "미정";
+  if (typeof value === "string" && Number.isNaN(new Date(value).getTime())) return "미정";
   const date = deadlineToDate(value);
-  if (Number.isNaN(date.getTime())) return fallback;
-  return date.toLocaleDateString("ko-KR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  });
+  if (Number.isNaN(date.getTime())) return "미정";
+  return formatMonthDay(date);
 }
 
 function formatDate(value) {
@@ -972,6 +1032,27 @@ function formatDate(value) {
   const date = typeof value.toDate === "function" ? value.toDate() : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleString("ko-KR");
+}
+
+function formatMonthDay(date) {
+  return `${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function dateFromKey(value) {
+  return new Date(`${value}T00:00:00+09:00`);
+}
+
+function dateKey(value) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function sameDate(a, b) {
+  return a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate();
 }
 
 function escapeHtml(value) {
