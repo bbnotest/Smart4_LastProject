@@ -347,7 +347,8 @@ function normalizeEntries(payload, override = {}) {
     student: clean(row.student),
     tasks: Array.isArray(row.tasks) ? row.tasks.map((task) => ({
       title: clean(task.title),
-      deadline: clean(task.deadline),
+      deadline: parseDeadlineValue(task.deadline),
+      deadlineText: clean(task.deadlineText),
       note: clean(task.note)
     })).filter((task) => task.title) : [],
     specialNote: clean(row.specialNote),
@@ -520,7 +521,7 @@ function renderTaskSummaryTable(title, rows) {
         ${rows.length ? rows.map(({ task, entry }) => `
           <div class="task-summary-row">
             <span>${escapeHtml(task.title)}</span>
-            <span>${escapeHtml(task.deadline || "미정")}</span>
+          <span>${escapeHtml(formatDeadline(task.deadline, task.deadlineText) || "미정")}</span>
             <span>${escapeHtml(entry.student)}</span>
           </div>
         `).join("") : `<div class="task-summary-empty">등록된 작업 없음</div>`}
@@ -563,6 +564,7 @@ function renderTeamEntry(entry) {
           <summary>${escapeHtml(previous?.date || "지난 작업 없음")}</summary>
           <div class="task-list">${previousTasks}</div>
         </details>
+        <p class="personal-note">개인 특이사항: ${escapeHtml(entry.specialNote || "없음")}</p>
       </article>
     `;
 }
@@ -577,7 +579,7 @@ function renderTask(task, muted = false, includeComment = false, entry = null) {
     <div class="task-card ${muted ? "is-muted" : ""}">
       <div class="task-card-head">
         <div class="task-name">${escapeHtml(task.title)}</div>
-        <div class="task-deadline ${overdue ? "danger" : ""}">${escapeHtml(task.deadline || "마감일 미정")}</div>
+        <div class="task-deadline ${overdue ? "danger" : ""}">${escapeHtml(formatDeadline(task.deadline, task.deadlineText) || "마감일 미정")}</div>
       </div>
       <p class="task-note">특이사항: ${escapeHtml(task.note || "없음")}</p>
       ${includeComment ? `
@@ -770,7 +772,7 @@ function renderChronicleItem(entry) {
           ${entry.tasks.length ? entry.tasks.map((task) => `
             <li>
               <span>${escapeHtml(task.title)}</span>
-              <small>${escapeHtml(task.deadline || "마감일 미정")}</small>
+              <small>${escapeHtml(formatDeadline(task.deadline, task.deadlineText) || "마감일 미정")}</small>
               <p>특이사항: ${escapeHtml(task.note || "없음")}</p>
             </li>
           `).join("") : `<li><span>등록된 작업 없음</span></li>`}
@@ -926,11 +928,43 @@ function slug(value) {
 
 function isOverdue(value) {
   if (!value) return false;
-  const date = new Date(value);
+  const date = deadlineToDate(value);
   if (Number.isNaN(date.getTime())) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return date < today;
+}
+
+function parseDeadlineValue(value) {
+  if (!value) return null;
+  if (typeof value?.toDate === "function") return value;
+  if (value instanceof Date) return value;
+  const text = clean(value);
+  if (!text || text === "-" || text === "없음") return null;
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return text;
+  return date;
+}
+
+function deadlineToDate(value) {
+  if (!value) return new Date("invalid");
+  if (typeof value?.toDate === "function") return value.toDate();
+  if (value instanceof Date) return value;
+  return new Date(value);
+}
+
+function formatDeadline(value, fallback = "") {
+  if (!value) return fallback;
+  if (typeof value === "string" && Number.isNaN(new Date(value).getTime())) {
+    return fallback || value;
+  }
+  const date = deadlineToDate(value);
+  if (Number.isNaN(date.getTime())) return fallback;
+  return date.toLocaleDateString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  });
 }
 
 function formatDate(value) {

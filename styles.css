@@ -562,6 +562,14 @@ textarea:focus {
   cursor: pointer;
 }
 
+.personal-note {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+
 .role-tag {
   display: inline-flex;
   margin-left: 6px;
@@ -733,7 +741,7 @@ textarea:focus {
 .slot-track {
   display: grid;
   grid-template-columns: minmax(0, 2.5fr) minmax(0, 5fr) minmax(0, 2.5fr);
-  align-items: stretch;
+  align-items: start;
   gap: 12px;
   margin-top: 12px;
   cursor: grab;
@@ -760,6 +768,18 @@ textarea:focus {
   min-width: 0;
   transition: opacity 0.18s ease, transform 0.18s ease;
   opacity: 0.72;
+}
+
+.history-slot .entry-card {
+  height: auto;
+}
+
+.history-slot .task-list {
+  align-content: start;
+}
+
+.history-slot .task-card {
+  min-height: auto;
 }
 
 .history-slot.is-active {
