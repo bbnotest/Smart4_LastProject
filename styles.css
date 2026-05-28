@@ -484,12 +484,13 @@ textarea:focus {
   min-height: 38px;
   border-left: 1px solid var(--line);
   background:
-    linear-gradient(90deg, transparent calc(100% - 1px), var(--line) 0) 0 0 / calc(100% / 7) 100%,
+    linear-gradient(90deg, transparent calc(100% - 1px), var(--line) 0) 0 0 / calc(100% / var(--gantt-days, 1)) 100%,
     var(--panel);
 }
 
 .gantt-ticks {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(var(--gantt-days, 1), minmax(64px, 1fr));
   align-items: center;
   gap: 0;
   overflow: hidden;
@@ -497,10 +498,11 @@ textarea:focus {
 }
 
 .gantt-ticks span {
-  flex: 0 0 64px;
+  min-width: 0;
   padding: 0 8px;
   color: var(--muted);
   font-size: 12px;
+  text-align: center;
   white-space: nowrap;
 }
 
@@ -522,7 +524,7 @@ textarea:focus {
   bottom: 8px;
   display: flex;
   align-items: center;
-  min-width: 48px;
+  min-width: 42px;
   max-width: calc(100% - var(--bar-left, 0%) - 8px);
   padding: 0 8px;
   color: #ffffff;

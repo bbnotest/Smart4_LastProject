@@ -590,6 +590,7 @@ function ganttTicks(range) {
 }
 
 function renderGanttGroup(title, rows, range, ticks) {
+  const timelineStyle = `--gantt-days:${Math.max(1, ticks.length)};`;
   return `
     <section class="gantt-group">
       <h3>${escapeHtml(title)}</h3>
@@ -598,25 +599,29 @@ function renderGanttGroup(title, rows, range, ticks) {
           <span>작업구분</span>
           <span>작업자</span>
           <span>작업</span>
-          <div class="gantt-timeline gantt-ticks">
+          <div class="gantt-timeline gantt-ticks" style="${timelineStyle}">
             ${ticks.map((tick) => `<span class="${sameDate(tick, new Date()) ? "is-today" : ""}">${escapeHtml(formatMonthDay(tick))}</span>`).join("")}
           </div>
         </div>
-        ${rows.length ? rows.map((row) => renderGanttRow(row, range)).join("") : `<div class="task-summary-empty">등록된 작업 없음</div>`}
+        ${rows.length ? rows.map((row) => renderGanttRow(row, range, ticks.length)).join("") : `<div class="task-summary-empty">등록된 작업 없음</div>`}
       </div>
     </section>
   `;
 }
 
-function renderGanttRow(row, range) {
-  const left = Math.max(0, Math.min(100, ((row.start - range.min) / (range.max - range.min)) * 100));
-  const width = Math.max(4, Math.min(100 - left, ((row.end - row.start) / (range.max - range.min)) * 100 || 4));
+function renderGanttRow(row, range, tickCount) {
+  const days = Math.max(1, tickCount);
+  const targetDate = row.hasDeadline ? row.end : row.start;
+  const dayIndex = Math.max(0, Math.min(days - 1, daysBetween(range.min, targetDate)));
+  const left = (dayIndex / days) * 100;
+  const width = 100 / days;
+  const timelineStyle = `--gantt-days:${days};`;
   return `
     <div class="gantt-row ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}">
       <span><b>${escapeHtml(row.part)}</b></span>
       <span>${escapeHtml(row.student)}</span>
       <span title="${escapeHtml(row.task.title)}">${escapeHtml(row.task.title)}</span>
-      <div class="gantt-timeline">
+      <div class="gantt-timeline" style="${timelineStyle}">
         <div class="gantt-bar ${row.part === "플밍" ? "is-dev" : ""} ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}" style="${row.hasDeadline ? `--bar-left:${left.toFixed(2)}%;--bar-width:${width.toFixed(2)}%;` : ""}">
           <span>${escapeHtml(formatDeadline(row.task.deadline, row.task.deadlineText))}</span>
         </div>
@@ -1102,6 +1107,12 @@ function sameDate(a, b) {
   return a.getFullYear() === b.getFullYear()
     && a.getMonth() === b.getMonth()
     && a.getDate() === b.getDate();
+}
+
+function daysBetween(start, end) {
+  const startUtc = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+  const endUtc = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+  return Math.floor((endUtc - startUtc) / 86400000);
 }
 
 function escapeHtml(value) {
