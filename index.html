@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>스크럼 작업 관리</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section id="authView" class="auth-view">
+      <div class="auth-panel">
+        <p class="eyebrow">Private Scrum Dashboard</p>
+        <h1>스크럼 작업 관리</h1>
+        <p class="auth-copy">등록된 관리자 계정으로만 접속할 수 있습니다.</p>
+
+        <form id="loginForm" class="login-form">
+          <label>
+            아이디
+            <input id="emailInput" type="text" autocomplete="username" inputmode="email" required>
+          </label>
+          <label>
+            비밀번호
+            <input id="passwordInput" type="password" autocomplete="current-password" required>
+          </label>
+          <button type="submit" class="primary-button">로그인</button>
+          <p id="authMessage" class="form-message" role="status"></p>
+        </form>
+      </div>
+    </section>
+
+    <section id="dashboardView" class="dashboard-view is-hidden">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Scrum Dashboard</p>
+          <h1>학생 작업 현황</h1>
+        </div>
+        <div class="topbar-actions">
+          <button id="themeToggle" class="icon-button" type="button" aria-label="다크모드 전환" title="다크모드 전환">◐</button>
+          <button id="logoutButton" class="ghost-button" type="button">로그아웃</button>
+        </div>
+      </header>
+
+      <section id="configNotice" class="notice is-hidden">
+        Firebase 설정이 비어 있어 미리보기 모드로 실행 중입니다. 실제 배포 전 firebase-config.js를 설정하세요.
+      </section>
+      <section id="permissionNotice" class="notice warning is-hidden"></section>
+      <section id="todayNotice" class="notice warning is-hidden"></section>
+
+      <section class="toolbar">
+        <div class="tabs" role="tablist" aria-label="화면 선택">
+          <button id="teamTab" class="tab-button is-active" type="button">팀별 작업</button>
+          <button id="studentTab" class="tab-button" type="button">학생 히스토리</button>
+          <button id="adminTab" class="tab-button is-hidden" type="button">관리자</button>
+        </div>
+      </section>
+
+      <section id="teamPage" class="page-view">
+        <section class="filters">
+          <label>
+            팀
+            <select id="teamFilter"></select>
+          </label>
+        </section>
+        <section id="dateStrip" class="date-strip" aria-label="날짜 선택"></section>
+        <section id="teamTaskSummary" class="task-summary"></section>
+        <div id="teamList" class="entry-list"></div>
+      </section>
+
+      <section id="studentPage" class="page-view is-hidden">
+        <section class="student-history-toolbar">
+          <label>
+            팀
+            <select id="historyTeamFilter"></select>
+          </label>
+          <label>
+            학생 검색
+            <input id="studentSearchInput" type="search" placeholder="학생 이름 입력">
+          </label>
+        </section>
+        <div id="teamRosterTable" class="roster-table-wrap"></div>
+        <div class="subtabs" role="tablist" aria-label="학생 보기 선택">
+          <button id="overviewTab" class="tab-button is-active" type="button">개요</button>
+          <button id="historyTab" class="tab-button" type="button">히스토리</button>
+        </div>
+        <div id="studentHistory" class="history-layout"></div>
+      </section>
+
+      <section id="adminPage" class="page-view is-hidden">
+        <div class="admin-panel">
+          <h2>관리자 업로드</h2>
+          <p id="adminStatus" class="admin-status"></p>
+          <p>파일명은 <strong>yyyy-mm-dd_team번호.json</strong> 형식이어야 합니다. 같은 날짜와 팀의 데이터는 다시 업로드하면 덮어씌워집니다.</p>
+          <div class="upload-box admin-upload">
+            <label class="file-button">
+              JSON 업로드
+              <input id="jsonInput" type="file" accept="application/json,.json" multiple>
+            </label>
+          </div>
+          <p id="uploadMessage" class="upload-message" role="status"></p>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script src="./firebase-config.js"></script>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
