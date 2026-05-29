@@ -59,6 +59,8 @@ const teamRoster = {
 const state = {
   entries: [],
   teamNotes: [],
+  delayReviews: [],
+  delayContexts: new Map(),
   comments: [],
   user: null,
   view: "team",
@@ -261,8 +263,32 @@ async function loadRemoteData() {
     els.permissionNotice.classList.add("is-hidden");
     const entriesSnapshot = await fb.getDocs(fb.query(fb.collection(db, "scrumEntries"), fb.orderBy("date", "desc")));
     state.entries = entriesSnapshot.docs.map((item) => item.data());
-    const notesSnapshot = await fb.getDocs(fb.query(fb.collection(db, "scrumTeamNotes"), fb.orderBy("date", "desc")));
-    state.teamNotes = notesSnapshot.docs.map((item) => item.data());
+
+    try {
+      const notesSnapshot = await fb.getDocs(fb.query(fb.collection(db, "scrumTeamNotes"), fb.orderBy("date", "desc")));
+      state.teamNotes = notesSnapshot.docs.map((item) => item.data());
+    } catch (notesError) {
+      state.teamNotes = [];
+      if (notesError?.code === "permission-denied") {
+        els.permissionNotice.textContent = "scrumTeamNotes 읽기 권한이 없습니다. Firebase 보안 규칙에 scrumTeamNotes 권한을 추가하세요.";
+        els.permissionNotice.classList.remove("is-hidden");
+      } else {
+        throw notesError;
+      }
+    }
+
+    try {
+      const reviewsSnapshot = await fb.getDocs(fb.collection(db, "scrumDelayReviews"));
+      state.delayReviews = reviewsSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+    } catch (reviewsError) {
+      state.delayReviews = [];
+      if (reviewsError?.code === "permission-denied") {
+        els.permissionNotice.textContent = "scrumDelayReviews 읽기 권한이 없습니다. Firebase 보안 규칙에 scrumDelayReviews 권한을 추가하세요.";
+        els.permissionNotice.classList.remove("is-hidden");
+      } else {
+        throw reviewsError;
+      }
+    }
 
     render();
   } catch (error) {
@@ -435,6 +461,7 @@ function normalizeTeamNotes(payload, override = {}) {
 }
 
 function render() {
+  state.delayContexts = new Map();
   syncFilterOptions();
   const entries = filteredEntries();
   renderTodayNotice();
@@ -453,6 +480,7 @@ function render() {
     renderTeamList(entries);
   }
   renderStudentHistory();
+  bindDelayReviewButtons();
 }
 
 function renderTodayNotice() {
@@ -880,7 +908,7 @@ function renderTeamSpecialNotes(notes) {
         <small>${escapeHtml(`${note.items?.length || 0}건`)}</small>
       </summary>
       ${note.message ? `<p>${escapeHtml(note.message)}</p>` : ""}
-      ${note.items?.length ? renderDelayTable(note.items) : ""}
+      ${note.items?.length ? renderDelayTable(note.items, note) : ""}
     </details>
   `).join("");
 }
@@ -943,9 +971,13 @@ function renderDelayedTaskSummary(items) {
         <small>${escapeHtml(`${items.length}건`)}</small>
       </summary>
       ${renderDelayTable(items.map(({ entry, task, previous }) => ({
+        team: entry.team,
+        date: entry.date,
         part: entry.part,
         student: entry.student,
         taskTitle: task.title,
+        previousTaskTitle: previous.task.title,
+        previousDate: previous.entry.date,
         previousDeadline: previous.task.deadline,
         previousDeadlineText: previous.task.deadlineText,
         currentDeadline: task.deadline,
@@ -956,7 +988,7 @@ function renderDelayedTaskSummary(items) {
   `;
 }
 
-function renderDelayTable(items) {
+function renderDelayTable(items, note = {}) {
   return `
     <div class="delay-table-wrap">
       <table class="delay-table">
@@ -970,19 +1002,252 @@ function renderDelayTable(items) {
           </tr>
         </thead>
         <tbody>
-          ${items.map((item) => `
-            <tr>
-              <td>${escapeHtml(item.part || "")}</td>
-              <td>${escapeHtml(item.student || "")}</td>
-              <td>${escapeHtml(item.taskTitle || item.note || "")}</td>
-              <td>${escapeHtml(item.previousDeadline ? formatDeadline(item.previousDeadline, item.previousDeadlineText) : item.previousDeadlineText || "미정")}</td>
-              <td>${escapeHtml(item.currentDeadline ? formatDeadline(item.currentDeadline, item.currentDeadlineText) : item.currentDeadlineText || "미정")}</td>
-            </tr>
-          `).join("")}
+          ${items.map((item) => renderDelayTableRow(item, note)).join("")}
         </tbody>
       </table>
     </div>
   `;
+}
+
+function renderDelayTableRow(item, note = {}) {
+  const context = buildDelayContext(item, note);
+  const review = delayReviewForKey(context.key);
+  const decision = review?.decision || "unknown";
+  const isRejected = decision === "rejected";
+  state.delayContexts.set(context.key, context);
+  return `
+    <tr class="${isRejected ? "is-disabled" : ""}">
+      <td>${escapeHtml(context.part)}</td>
+      <td>${escapeHtml(context.student)}</td>
+      <td>
+        <div class="delay-task-cell">
+          <span>${escapeHtml(context.currentTitle || context.note || "")}</span>
+          ${renderDelayReviewChip(context.key, decision)}
+        </div>
+      </td>
+      <td>${escapeHtml(context.previousDeadlineLabel)}</td>
+      <td>${escapeHtml(context.currentDeadlineLabel)}</td>
+    </tr>
+  `;
+}
+
+function renderDelayReviewChip(key, decision) {
+  const label = decision === "confirmed" ? "(O)" : decision === "rejected" ? "(X)" : "(추정)";
+  return `
+    <button class="delay-review-chip ${decisionClass(decision)}" type="button" data-review-key="${escapeHtml(key)}" title="전/후 데이터를 비교하고 판정합니다">
+      ${escapeHtml(label)}
+    </button>
+  `;
+}
+
+function buildDelayContext(item, note = {}) {
+  const team = clean(item.team || note.team);
+  const date = clean(item.date || note.date);
+  const part = clean(item.part);
+  const student = clean(item.student);
+  const currentTitle = clean(item.taskTitle || item.note);
+  const currentEntry = state.entries.find((entry) => {
+    return entry.team === team
+      && entry.date === date
+      && entry.part === part
+      && entry.student === student;
+  });
+  const currentTask = currentEntry?.tasks?.find((task) => normalizedTaskTitle(task.title) === normalizedTaskTitle(currentTitle))
+    || currentEntry?.tasks?.find((task) => task.title.includes(currentTitle) || currentTitle.includes(task.title));
+  const previous = currentEntry && currentTask ? findPreviousSameTask(currentEntry, currentTask) : null;
+  const previousTitle = clean(item.previousTaskTitle || previous?.task?.title || currentTitle);
+  const previousDate = clean(item.previousDate || previous?.entry?.date || "");
+  const previousDeadline = item.previousDeadline || previous?.task?.deadline || null;
+  const previousDeadlineText = clean(item.previousDeadlineText || previous?.task?.deadlineText);
+  const currentDeadline = item.currentDeadline || currentTask?.deadline || null;
+  const currentDeadlineText = clean(item.currentDeadlineText || currentTask?.deadlineText);
+  const key = delayReviewKey({
+    team,
+    date,
+    part,
+    student,
+    currentTitle,
+    previousDeadlineText,
+    currentDeadlineText
+  });
+
+  return {
+    key,
+    team,
+    date,
+    part,
+    student,
+    currentTitle,
+    previousTitle,
+    previousDate,
+    previousDeadline,
+    previousDeadlineText,
+    previousDeadlineLabel: previousDeadline ? formatDeadline(previousDeadline, previousDeadlineText) : previousDeadlineText || "미정",
+    currentDeadline,
+    currentDeadlineText,
+    currentDeadlineLabel: currentDeadline ? formatDeadline(currentDeadline, currentDeadlineText) : currentDeadlineText || "미정",
+    note: clean(item.note),
+    currentNote: clean(currentTask?.note || item.note),
+    specialNote: clean(currentEntry?.specialNote)
+  };
+}
+
+function delayReviewKey(value) {
+  return [
+    value.team,
+    value.date,
+    value.part,
+    value.student,
+    normalizedTaskTitle(value.currentTitle),
+    clean(value.previousDeadlineText),
+    clean(value.currentDeadlineText)
+  ].join("|");
+}
+
+function delayReviewForKey(key) {
+  return state.delayReviews.find((review) => review.key === key);
+}
+
+function decisionClass(decision) {
+  if (decision === "confirmed") return "is-confirmed";
+  if (decision === "rejected") return "is-rejected";
+  return "is-unknown";
+}
+
+function bindDelayReviewButtons() {
+  document.querySelectorAll(".delay-review-chip").forEach((button) => {
+    button.addEventListener("click", () => openDelayReviewModal(button.dataset.reviewKey || ""));
+  });
+}
+
+function openDelayReviewModal(key) {
+  const context = state.delayContexts.get(key);
+  if (!context) return;
+  const review = delayReviewForKey(key);
+  const modal = ensureDelayReviewModal();
+  modal.innerHTML = `
+    <div class="review-modal-backdrop" data-review-close="true"></div>
+    <section class="review-modal-panel" role="dialog" aria-modal="true" aria-label="추정 작업 판정">
+      <div class="review-modal-head">
+        <div>
+          <p class="eyebrow">${escapeHtml(context.team)} · ${escapeHtml(context.part)} · ${escapeHtml(context.student)}</p>
+          <h2>밀린 작업 추정 검토</h2>
+        </div>
+        <button class="icon-button" type="button" data-review-close="true" aria-label="닫기">×</button>
+      </div>
+      <div class="review-compare-grid">
+        <article class="review-compare-card">
+          <h3>이전 보고</h3>
+          <dl>
+            <div><dt>날짜</dt><dd>${escapeHtml(context.previousDate || "이전 데이터")}</dd></div>
+            <div><dt>작업</dt><dd>${escapeHtml(context.previousTitle || "확인 필요")}</dd></div>
+            <div><dt>마감</dt><dd>${escapeHtml(context.previousDeadlineLabel)}</dd></div>
+          </dl>
+        </article>
+        <article class="review-compare-card">
+          <h3>오늘 보고</h3>
+          <dl>
+            <div><dt>날짜</dt><dd>${escapeHtml(context.date)}</dd></div>
+            <div><dt>작업</dt><dd>${escapeHtml(context.currentTitle || "확인 필요")}</dd></div>
+            <div><dt>마감</dt><dd>${escapeHtml(context.currentDeadlineLabel)}</dd></div>
+          </dl>
+        </article>
+      </div>
+      ${(context.currentNote || context.specialNote || context.note) ? `
+        <div class="review-note-box">
+          ${context.currentNote ? `<p><strong>작업 특이사항</strong> ${escapeHtml(context.currentNote)}</p>` : ""}
+          ${context.specialNote ? `<p><strong>개인 특이사항</strong> ${escapeHtml(context.specialNote)}</p>` : ""}
+          ${context.note ? `<p><strong>추정 근거</strong> ${escapeHtml(context.note)}</p>` : ""}
+        </div>
+      ` : ""}
+      <div class="review-current-state">
+        현재 판정: <strong>${escapeHtml(reviewLabel(review?.decision || "unknown"))}</strong>
+        ${review?.reviewedBy ? `<span>${escapeHtml(review.reviewedBy)}</span>` : ""}
+      </div>
+      <div class="review-modal-actions">
+        <button class="primary-button" type="button" data-review-decision="confirmed">정말 밀린 작업 (O)</button>
+        <button class="ghost-button" type="button" data-review-decision="rejected">추정 아님 (X)</button>
+      </div>
+    </section>
+  `;
+  modal.classList.remove("is-hidden");
+
+  modal.querySelectorAll("[data-review-close]").forEach((button) => {
+    button.addEventListener("click", closeDelayReviewModal);
+  });
+  modal.querySelectorAll("[data-review-decision]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      try {
+        await saveDelayReview(context, button.dataset.reviewDecision);
+        closeDelayReviewModal();
+        render();
+      } catch (error) {
+        if (error?.code === "permission-denied") {
+          els.permissionNotice.textContent = "scrumDelayReviews 저장 권한이 없습니다. Firebase 보안 규칙에 scrumDelayReviews 권한을 추가하세요.";
+          els.permissionNotice.classList.remove("is-hidden");
+          return;
+        }
+        throw error;
+      }
+    });
+  });
+}
+
+function ensureDelayReviewModal() {
+  let modal = document.querySelector("#delayReviewModal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "delayReviewModal";
+    modal.className = "review-modal is-hidden";
+    document.body.appendChild(modal);
+  }
+  return modal;
+}
+
+function closeDelayReviewModal() {
+  document.querySelector("#delayReviewModal")?.classList.add("is-hidden");
+}
+
+function reviewLabel(decision) {
+  if (decision === "confirmed") return "(O)";
+  if (decision === "rejected") return "(X)";
+  return "(추정)";
+}
+
+async function saveDelayReview(context, decision) {
+  const review = {
+    key: context.key,
+    team: context.team,
+    date: context.date,
+    part: context.part,
+    student: context.student,
+    taskTitle: context.currentTitle,
+    previousTaskTitle: context.previousTitle,
+    previousDeadlineText: context.previousDeadlineText,
+    currentDeadlineText: context.currentDeadlineText,
+    decision,
+    reviewedBy: state.user?.email || "preview",
+    reviewedAt: new Date().toISOString()
+  };
+  const id = slug(context.key);
+
+  if (firebaseReady) {
+    await fb.setDoc(fb.doc(db, "scrumDelayReviews", id), review, { merge: true });
+    const existing = state.delayReviews.findIndex((item) => item.key === context.key);
+    if (existing >= 0) {
+      state.delayReviews[existing] = { id, ...review };
+    } else {
+      state.delayReviews.push({ id, ...review });
+    }
+    return;
+  }
+
+  const existing = state.delayReviews.findIndex((item) => item.key === context.key);
+  if (existing >= 0) {
+    state.delayReviews[existing] = { id, ...review };
+  } else {
+    state.delayReviews.push({ id, ...review });
+  }
 }
 
 function renderTeamEntry(entry) {
