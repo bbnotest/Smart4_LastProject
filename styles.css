@@ -722,6 +722,49 @@ textarea:focus {
   background: var(--line);
 }
 
+.daily-delay-summary {
+  margin-top: 12px;
+  padding: 12px;
+  color: #92400e;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.32);
+  border-radius: 8px;
+}
+
+.daily-delay-summary h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.daily-delay-summary ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.daily-delay-summary li {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) 110px;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.daily-delay-summary span {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.daily-delay-summary small {
+  color: #92400e;
+  font-weight: 700;
+  text-align: right;
+}
+
 .team-column {
   display: grid;
   gap: 8px;
@@ -1301,5 +1344,13 @@ textarea:focus {
 
   .gantt-task-cell {
     left: 82px;
+  }
+
+  .daily-delay-summary li {
+    grid-template-columns: 1fr;
+  }
+
+  .daily-delay-summary small {
+    text-align: left;
   }
 }

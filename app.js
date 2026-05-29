@@ -505,6 +505,7 @@ function renderTeamList(entries) {
   const teamEntries = entries.sort(compareByRole);
   const plannedEntries = teamEntries.filter((entry) => entry.part === "기획");
   const devEntries = teamEntries.filter((entry) => entry.part === "플밍");
+  const delayedItems = delayedTaskItems(teamEntries);
 
   if (!teamEntries.length) {
     els.teamList.innerHTML = `<div class="empty-state">업로드된 작업 데이터가 없습니다.</div>`;
@@ -516,6 +517,7 @@ function renderTeamList(entries) {
       ${renderTeamColumn("기획", plannedEntries)}
       ${renderTeamColumn("플밍", devEntries)}
     </section>
+    ${renderDelayedTaskSummary(delayedItems)}
   `;
 
   document.querySelectorAll(".student-link").forEach((button) => {
@@ -527,7 +529,7 @@ function renderTeamList(entries) {
 }
 
 function renderTeamOverview(entries) {
-  const rows = ganttRows(entries);
+  const rows = consolidateGanttRows(ganttRows(entries));
 
   if (!rows.length) {
     els.teamTaskSummary.innerHTML = `<div class="empty-state">등록된 작업 데이터가 없습니다.</div>`;
@@ -563,6 +565,7 @@ function ganttRows(entries) {
       const isDueToday = hasDeadline && sameDate(deadline, new Date());
       return {
         part: entry.part || "파트 미지정",
+        team: entry.team,
         student: entry.student,
         task,
         start,
@@ -584,6 +587,53 @@ function ganttRows(entries) {
         || a.start - b.start
         || a.task.title.localeCompare(b.task.title);
     });
+}
+
+function consolidateGanttRows(rows) {
+  const sorted = [...rows].sort((a, b) => {
+    return a.team.localeCompare(b.team)
+      || a.part.localeCompare(b.part)
+      || a.student.localeCompare(b.student)
+      || normalizedTaskTitle(a.task.title).localeCompare(normalizedTaskTitle(b.task.title))
+      || a.start - b.start;
+  });
+  const merged = [];
+
+  sorted.forEach((row) => {
+    const key = ganttMergeKey(row);
+    const previous = [...merged].reverse().find((item) => item.mergeKey === key);
+    if (previous && previous.hasDeadline && previous.end >= row.start) {
+      previous.start = previous.start < row.start ? previous.start : row.start;
+      previous.end = previous.end > row.end ? previous.end : row.end;
+      previous.hasDeadline = previous.hasDeadline || row.hasDeadline;
+      previous.isDueToday = previous.isDueToday || row.isDueToday;
+      previous.date = previous.date < row.date ? previous.date : row.date;
+      return;
+    }
+
+    merged.push({
+      ...row,
+      mergeKey: key
+    });
+  });
+
+  return merged.sort(compareGanttRows);
+}
+
+function compareGanttRows(a, b) {
+  const partDiff = (a.part === "기획" ? 0 : 1) - (b.part === "기획" ? 0 : 1);
+  if (partDiff) return partDiff;
+  const roleOrder = { "팀장": 0, "PM": 1, "팀원": 2 };
+  const roleDiff = (roleOrder[a.role] ?? 9) - (roleOrder[b.role] ?? 9);
+  if (roleDiff) return roleDiff;
+  return a.student.localeCompare(b.student)
+    || Number(b.hasDeadline) - Number(a.hasDeadline)
+    || a.start - b.start
+    || a.task.title.localeCompare(b.task.title);
+}
+
+function ganttMergeKey(row) {
+  return `${row.team}|${row.part}|${row.student}|${normalizedTaskTitle(row.task.title)}`;
 }
 
 function ganttRange() {
@@ -734,6 +784,73 @@ function renderTeamColumn(title, entries) {
       <div class="team-column-list">
         ${entries.length ? entries.map(renderTeamEntry).join("") : `<div class="empty-state">데이터가 없습니다.</div>`}
       </div>
+    </section>
+  `;
+}
+
+function delayedTaskItems(entries) {
+  const items = [];
+  const seen = new Set();
+
+  entries.forEach((entry) => {
+    entry.tasks.forEach((task) => {
+      const previous = findPreviousSameTask(entry, task);
+      if (!previous) return;
+      const key = `${entry.team}|${entry.date}|${entry.student}|${normalizedTaskTitle(task.title)}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      items.push({
+        entry,
+        task,
+        previous
+      });
+    });
+  });
+
+  return items.sort((a, b) => {
+    return a.entry.part.localeCompare(b.entry.part)
+      || a.entry.student.localeCompare(b.entry.student)
+      || a.task.title.localeCompare(b.task.title);
+  });
+}
+
+function findPreviousSameTask(entry, task) {
+  const currentDate = dateFromKey(entry.date);
+  const normalizedTitle = normalizedTaskTitle(task.title);
+  return state.entries
+    .filter((candidate) => {
+      return candidate.team === entry.team
+        && candidate.part === entry.part
+        && candidate.student === entry.student
+        && candidate.date < entry.date;
+    })
+    .flatMap((candidate) => candidate.tasks.map((candidateTask) => ({
+      entry: candidate,
+      task: candidateTask,
+      deadline: deadlineToDate(candidateTask.deadline)
+    })))
+    .filter((candidate) => {
+      return normalizedTaskTitle(candidate.task.title) === normalizedTitle
+        && !Number.isNaN(candidate.deadline.getTime())
+        && candidate.deadline < currentDate;
+    })
+    .sort((a, b) => b.entry.date.localeCompare(a.entry.date))[0];
+}
+
+function renderDelayedTaskSummary(items) {
+  if (!items.length) return "";
+  return `
+    <section class="daily-delay-summary">
+      <h3>특이사항: 밀린 작업 추정</h3>
+      <ul>
+        ${items.map(({ entry, task, previous }) => `
+          <li>
+            <strong>${escapeHtml(entry.part)} · ${escapeHtml(entry.student)}</strong>
+            <span>${escapeHtml(task.title)}</span>
+            <small>이전 마감 ${escapeHtml(formatDeadline(previous.task.deadline, previous.task.deadlineText))}</small>
+          </li>
+        `).join("")}
+      </ul>
     </section>
   `;
 }
@@ -902,7 +1019,7 @@ function firstStudentInTeam(team) {
 }
 
 function renderOverviewPanel(selected, history) {
-  const rows = ganttRows(history);
+  const rows = consolidateGanttRows(ganttRows(history));
   const range = rows.length ? ganttRange() : null;
   const ticks = range ? ganttTicks(range) : [];
   const activeIndex = state.historyIndex;
@@ -1124,6 +1241,13 @@ function meaningfulSpecialNote(value) {
   const note = meaningfulNote(value);
   if (!note || note === "팀장" || note === "PM") return "";
   return note;
+}
+
+function normalizedTaskTitle(value) {
+  return clean(value)
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[()[\]{}·,./:_\-~]/g, "");
 }
 
 function slug(value) {
