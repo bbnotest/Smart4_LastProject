@@ -487,12 +487,18 @@ textarea:focus {
   font-size: 13px;
 }
 
+.gantt-fixed-row.gantt-header {
+  min-height: 58px;
+}
+
 .gantt-fixed-row:first-child,
 .gantt-timeline-row:first-of-type {
   border-top: 0;
 }
 
 .gantt-fixed-row > span {
+  display: flex;
+  align-items: center;
   min-width: 0;
   padding: 9px 10px;
   overflow: hidden;
@@ -526,6 +532,7 @@ textarea:focus {
   z-index: 3;
   display: grid;
   grid-template-rows: 26px 32px;
+  min-height: 58px;
   min-width: var(--gantt-width, 460px);
   color: var(--muted);
   background: var(--panel-soft);
