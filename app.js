@@ -71,6 +71,12 @@ const state = {
   historyIndex: -1,
   studentMode: "overview",
   ganttPeriod: "all",
+  issueFilters: {
+    date: "all",
+    student: "all",
+    decision: "all",
+    sort: "date-desc"
+  },
   filters: {
     team: "all",
     date: "all"
@@ -666,18 +672,21 @@ function renderTeamOverview(entries) {
 }
 
 function renderIssueHistory() {
-  const issues = issueHistoryItems();
+  const allIssues = issueHistoryItems();
+  syncIssueFilters(allIssues);
+  const issues = filteredIssueHistoryItems(allIssues);
   els.teamTaskSummary.innerHTML = `
     <div class="task-summary-head">
       <h2>${escapeHtml(state.filters.team)} 이슈 히스토리</h2>
-      <span>${escapeHtml(`${issues.length}건`)}</span>
+      <span>${escapeHtml(`${issues.length}/${allIssues.length}건`)}</span>
     </div>
+    ${renderIssueHistoryControls(allIssues)}
     ${issues.length ? `
-      <div class="issue-history-list">
-        ${issues.map(renderIssueHistoryItem).join("")}
-      </div>
+      ${renderIssueHistoryTable(issues)}
     ` : `<div class="empty-state">등록된 이슈가 없습니다.</div>`}
   `;
+  bindIssueHistoryControls();
+  bindIssueHistoryRows();
 }
 
 function issueHistoryItems() {
@@ -756,24 +765,137 @@ function issueIdentityKey(item) {
   ].join("|");
 }
 
-function renderIssueHistoryItem(item) {
+function syncIssueFilters(issues) {
+  const dates = new Set(issues.map((item) => item.date));
+  const students = new Set(issues.map((item) => item.student));
+  const decisions = new Set(issues.map((item) => item.decision));
+  if (state.issueFilters.date !== "all" && !dates.has(state.issueFilters.date)) state.issueFilters.date = "all";
+  if (state.issueFilters.student !== "all" && !students.has(state.issueFilters.student)) state.issueFilters.student = "all";
+  if (state.issueFilters.decision !== "all" && !decisions.has(state.issueFilters.decision)) state.issueFilters.decision = "all";
+}
+
+function filteredIssueHistoryItems(issues) {
+  const filtered = issues.filter((item) => {
+    return (state.issueFilters.date === "all" || item.date === state.issueFilters.date)
+      && (state.issueFilters.student === "all" || item.student === state.issueFilters.student)
+      && (state.issueFilters.decision === "all" || item.decision === state.issueFilters.decision);
+  });
+  return sortIssueHistoryItems(filtered);
+}
+
+function sortIssueHistoryItems(issues) {
+  const decisionOrder = { pending: 0, confirmed: 1, rejected: 2 };
+  return [...issues].sort((a, b) => {
+    if (state.issueFilters.sort === "date-asc") return a.date.localeCompare(b.date) || a.student.localeCompare(b.student);
+    if (state.issueFilters.sort === "student") return a.student.localeCompare(b.student) || b.date.localeCompare(a.date);
+    if (state.issueFilters.sort === "decision") return (decisionOrder[a.decision] ?? 9) - (decisionOrder[b.decision] ?? 9) || b.date.localeCompare(a.date);
+    return b.date.localeCompare(a.date) || a.student.localeCompare(b.student);
+  });
+}
+
+function renderIssueHistoryControls(issues) {
+  const dates = unique(issues.map((item) => item.date)).sort().reverse();
+  const students = unique(issues.map((item) => item.student));
+  return `
+    <div class="issue-history-controls">
+      <label>
+        보고일
+        <select data-issue-filter="date">
+          <option value="all">전체</option>
+          ${dates.map((date) => `<option value="${escapeHtml(date)}" ${state.issueFilters.date === date ? "selected" : ""}>${escapeHtml(formatDateKeyShort(date))}</option>`).join("")}
+        </select>
+      </label>
+      <label>
+        작업인원
+        <select data-issue-filter="student">
+          <option value="all">전체</option>
+          ${students.map((student) => `<option value="${escapeHtml(student)}" ${state.issueFilters.student === student ? "selected" : ""}>${escapeHtml(student)}</option>`).join("")}
+        </select>
+      </label>
+      <label>
+        상태
+        <select data-issue-filter="decision">
+          <option value="all">전체</option>
+          ${["pending", "confirmed", "rejected"].map((decision) => `<option value="${decision}" ${state.issueFilters.decision === decision ? "selected" : ""}>${escapeHtml(reviewLabel(decision))}</option>`).join("")}
+        </select>
+      </label>
+      <label>
+        정렬
+        <select data-issue-filter="sort">
+          <option value="date-desc" ${state.issueFilters.sort === "date-desc" ? "selected" : ""}>보고일 최신순</option>
+          <option value="date-asc" ${state.issueFilters.sort === "date-asc" ? "selected" : ""}>보고일 오래된순</option>
+          <option value="student" ${state.issueFilters.sort === "student" ? "selected" : ""}>작업인원순</option>
+          <option value="decision" ${state.issueFilters.sort === "decision" ? "selected" : ""}>상태순</option>
+        </select>
+      </label>
+    </div>
+  `;
+}
+
+function renderIssueHistoryTable(issues) {
+  return `
+    <div class="issue-history-table-wrap">
+      <table class="issue-history-table">
+        <thead>
+          <tr>
+            <th>보고일</th>
+            <th>작업인원</th>
+            <th>작업</th>
+            <th>이전 마감</th>
+            <th>현재 마감</th>
+            <th>상태</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${issues.map(renderIssueHistoryRow).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderIssueHistoryRow(item) {
   const isRejected = item.decision === "rejected";
   return `
-    <article class="issue-history-item ${isRejected ? "is-disabled" : ""}">
-      <div class="issue-history-main">
-        <div>
-          <div class="issue-history-meta">${escapeHtml(`${item.date} · ${item.part} · ${item.student}`)}</div>
-          <h3>${escapeHtml(item.currentTitle || item.note || "작업명 확인 필요")}</h3>
-        </div>
-        ${renderDelayReviewChip(item.key, item.decision)}
-      </div>
-      <div class="issue-compare-line">
-        <span>이전: ${escapeHtml(item.previousTitle || "확인 필요")} · ${escapeHtml(item.previousDeadlineLabel)}</span>
-        <span>현재: ${escapeHtml(item.currentDeadlineLabel)}</span>
-      </div>
-      ${item.review?.comment ? `<p class="issue-comment">${escapeHtml(item.review.comment)}</p>` : ""}
-    </article>
+    <tr class="${isRejected ? "is-disabled" : ""}" data-issue-key="${escapeHtml(item.key)}" tabindex="0">
+      <td>${escapeHtml(formatDateKeyShort(item.date))}</td>
+      <td>
+        <strong>${escapeHtml(item.student)}</strong>
+        <small>${escapeHtml(item.part)}</small>
+      </td>
+      <td>
+        <span>${escapeHtml(item.currentTitle || item.note || "작업명 확인 필요")}</span>
+        ${item.review?.comment ? `<small class="issue-comment-inline">${escapeHtml(item.review.comment)}</small>` : ""}
+      </td>
+      <td>${escapeHtml(item.previousDeadlineLabel)}</td>
+      <td>${escapeHtml(item.currentDeadlineLabel)}</td>
+      <td><span class="delay-review-chip ${decisionClass(item.decision)}">${escapeHtml(reviewLabel(item.decision))}</span></td>
+    </tr>
   `;
+}
+
+function bindIssueHistoryControls() {
+  document.querySelectorAll("[data-issue-filter]").forEach((select) => {
+    select.addEventListener("change", () => {
+      const key = select.dataset.issueFilter;
+      state.issueFilters[key] = select.value;
+      renderIssueHistory();
+      bindDelayReviewButtons();
+    });
+  });
+}
+
+function bindIssueHistoryRows() {
+  document.querySelectorAll("[data-issue-key]").forEach((row) => {
+    const open = () => openDelayReviewModal(row.dataset.issueKey || "");
+    row.addEventListener("click", open);
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        open();
+      }
+    });
+  });
 }
 
 function ganttRows(entries) {
@@ -1892,6 +2014,12 @@ function formatDate(value) {
   const date = typeof value.toDate === "function" ? value.toDate() : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleString("ko-KR");
+}
+
+function formatDateKeyShort(value) {
+  const date = dateFromKey(value);
+  if (Number.isNaN(date.getTime())) return value || "";
+  return formatMonthDay(date);
 }
 
 function formatMonthDay(date) {

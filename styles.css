@@ -971,55 +971,74 @@ textarea:focus {
   opacity: 0.45;
 }
 
-.issue-history-list {
-  display: grid;
-  gap: 10px;
+.issue-history-controls {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
 }
 
-.issue-history-item {
-  padding: 14px;
-  background: var(--panel);
+.issue-history-controls label {
+  min-width: 130px;
+  max-width: 180px;
+}
+
+.issue-history-table-wrap {
+  overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
 }
 
-.issue-history-item.is-disabled {
+.issue-history-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.issue-history-table th,
+.issue-history-table td {
+  padding: 9px 10px;
+  border-top: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.issue-history-table th {
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.issue-history-table tbody tr {
+  cursor: pointer;
+}
+
+.issue-history-table tbody tr:hover,
+.issue-history-table tbody tr:focus {
+  background: rgba(37, 99, 235, 0.06);
+  outline: none;
+}
+
+.issue-history-table tr.is-disabled {
   color: var(--muted);
   background: rgba(100, 116, 139, 0.08);
 }
 
-.issue-history-main {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
+.issue-history-table td strong,
+.issue-history-table td span {
+  display: block;
 }
 
-.issue-history-main h3 {
-  margin: 4px 0 0;
-  font-size: 14px;
-  line-height: 1.45;
-}
-
-.issue-history-meta,
-.issue-compare-line,
-.issue-comment {
+.issue-history-table td small {
+  display: block;
+  margin-top: 3px;
   color: var(--muted);
-  font-size: 12px;
 }
 
-.issue-compare-line {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 10px;
-}
-
-.issue-comment {
-  margin: 10px 0 0;
-  padding: 9px 10px;
-  background: var(--panel-soft);
-  border-radius: 6px;
+.issue-comment-inline {
+  max-width: 420px;
 }
 
 .team-column {
