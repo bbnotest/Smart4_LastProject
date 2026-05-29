@@ -416,6 +416,30 @@ textarea:focus {
   gap: 14px;
 }
 
+.gantt-period-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+
+.gantt-period-button {
+  min-height: 32px;
+  padding: 0 12px;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.gantt-period-button.is-active {
+  color: #ffffff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 .personal-gantt-panel .task-summary-head h2 {
   margin: 0;
 }
@@ -443,8 +467,8 @@ textarea:focus {
 
 .gantt-row {
   display: grid;
-  grid-template-columns: 92px minmax(220px, 0.8fr) minmax(460px, 1.7fr);
-  min-width: 820px;
+  grid-template-columns: 92px minmax(220px, 0.8fr) minmax(var(--gantt-width, 460px), 1.7fr);
+  min-width: calc(312px + var(--gantt-width, 460px));
   border-top: 1px solid var(--line);
   font-size: 13px;
 }
@@ -488,6 +512,26 @@ textarea:focus {
     var(--panel);
 }
 
+.gantt-day-layer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--gantt-days, 1), minmax(64px, 1fr));
+  pointer-events: none;
+}
+
+.gantt-day-layer span {
+  border-right: 1px solid var(--line);
+}
+
+.gantt-day-layer span.is-off-day {
+  background: rgba(148, 163, 184, 0.22);
+}
+
+.gantt-day-layer span.is-today {
+  background: rgba(37, 99, 235, 0.12);
+}
+
 .gantt-ticks {
   display: grid;
   grid-template-columns: repeat(var(--gantt-days, 1), minmax(64px, 1fr));
@@ -514,6 +558,10 @@ textarea:focus {
   color: #ffffff;
   background: var(--accent);
   font-weight: 800;
+}
+
+.gantt-ticks span.is-off-day:not(.is-today) {
+  background: rgba(148, 163, 184, 0.24);
 }
 
 .gantt-bar {
@@ -645,8 +693,9 @@ textarea:focus {
 
 .entry-special-note {
   margin: 4px 0 0;
-  color: var(--muted);
+  color: #b45309;
   font-size: 12px;
+  font-weight: 700;
   line-height: 1.45;
 }
 
@@ -779,8 +828,9 @@ textarea:focus {
 .special-note {
   margin: 14px 0 0;
   padding-top: 12px;
-  color: var(--muted);
+  color: #b45309;
   border-top: 1px solid var(--line);
+  font-weight: 700;
 }
 
 .history-layout {
@@ -817,37 +867,39 @@ textarea:focus {
 }
 
 .roster-part h3 {
-  margin: 0 0 6px;
+  margin: 0 0 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
   font-size: 13px;
 }
 
-.roster-part table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.roster-part th,
-.roster-part td {
-  padding: 4px 5px;
-  border-top: 1px solid var(--line);
-  text-align: left;
-  font-size: 11px;
-}
-
-.roster-part th {
-  color: var(--muted);
+.roster-button-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .roster-student {
-  padding: 0;
+  min-height: 32px;
+  padding: 6px 10px;
   color: var(--text);
   background: transparent;
-  border: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   font-weight: 700;
+  text-align: center;
+  cursor: pointer;
 }
 
 .roster-student:hover {
+  border-color: rgba(37, 99, 235, 0.45);
   color: var(--accent-strong);
+}
+
+.roster-student.is-selected {
+  color: #ffffff;
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .role-label {
@@ -1145,7 +1197,7 @@ textarea:focus {
   }
 
   .gantt-row {
-    grid-template-columns: 82px minmax(180px, 0.8fr) minmax(340px, 1.4fr);
-    min-width: 680px;
+    grid-template-columns: 82px minmax(180px, 0.8fr) minmax(var(--gantt-width, 340px), 1.4fr);
+    min-width: calc(262px + var(--gantt-width, 340px));
   }
 }

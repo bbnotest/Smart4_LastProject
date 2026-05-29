@@ -3,6 +3,14 @@ const firebaseReady = Boolean(config.apiKey && config.projectId && config.authDo
 const emailDomain = "@smart.com";
 const adminEmails = ["안중재@smart.com"];
 const monitoredTeams = ["1팀", "2팀", "3팀", "4팀", "5팀", "6팀", "7팀", "8팀"];
+const ganttPeriods = [
+  { key: "all", label: "전체", start: "2026-05-28", end: "2026-07-15" },
+  { key: "demo", label: "데모", start: "2026-05-28", end: "2026-06-09" },
+  { key: "cbt", label: "CBT", start: "2026-06-10", end: "2026-06-23" },
+  { key: "release", label: "출시", start: "2026-06-24", end: "2026-06-30" },
+  { key: "polish", label: "폴리싱", start: "2026-07-01", end: "2026-07-15" }
+];
+const holidayKeys = ["2026-06-03"];
 const rosterRoles = {
   "1팀": {
     "기획": { leader: "맹지훈", pm: "박영성" },
@@ -59,6 +67,7 @@ const state = {
   historyTeam: "1팀",
   historyIndex: -1,
   studentMode: "overview",
+  ganttPeriod: "all",
   filters: {
     team: "all",
     date: "all"
@@ -509,7 +518,7 @@ function renderTeamOverview(entries) {
     return;
   }
 
-  const range = ganttRange(rows);
+  const range = ganttRange();
   const ticks = ganttTicks(range);
   const planRows = rows.filter((row) => row.part === "기획");
   const devRows = rows.filter((row) => row.part === "플밍");
@@ -519,11 +528,13 @@ function renderTeamOverview(entries) {
       <h2>${escapeHtml(state.filters.team)} 작업 개요</h2>
       <span>${escapeHtml(range.label)}</span>
     </div>
+    ${renderGanttPeriodControls()}
     <div class="gantt-board">
       ${renderGanttGroup("기획", planRows, range, ticks)}
       ${renderGanttGroup("플밍", devRows, range, ticks)}
     </div>
   `;
+  bindGanttPeriodControls();
 }
 
 function ganttRows(entries) {
@@ -559,23 +570,17 @@ function ganttRows(entries) {
     });
 }
 
-function ganttRange(rows) {
-  const starts = rows.map((row) => row.start.getTime()).filter(Boolean);
-  const ends = rows.map((row) => row.end.getTime()).filter(Boolean);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const min = new Date(Math.min(...starts, ...ends, today.getTime()));
-  const max = new Date(Math.max(...starts, ...ends, today.getTime()));
-  if (sameDate(min, max)) {
-    max.setDate(max.getDate() + 1);
-  }
+function ganttRange() {
+  const period = ganttPeriods.find((item) => item.key === state.ganttPeriod) || ganttPeriods[0];
+  const min = dateFromKey(period.start);
+  const max = dateFromKey(period.end);
   min.setHours(0, 0, 0, 0);
   max.setHours(23, 59, 59, 999);
   return {
     min,
     max,
     days: Math.max(1, Math.ceil((max - min) / 86400000)),
-    label: `${dateKey(min)} ~ ${dateKey(max)}`
+    label: `${period.label} · ${dateKey(min)} ~ ${dateKey(max)}`
   };
 }
 
@@ -590,44 +595,97 @@ function ganttTicks(range) {
 }
 
 function renderGanttGroup(title, rows, range, ticks) {
-  const timelineStyle = `--gantt-days:${Math.max(1, ticks.length)};`;
+  const days = Math.max(1, ticks.length);
+  const timelineStyle = `--gantt-days:${days};--gantt-width:${days * 64}px;`;
+  const visibleRows = rows.filter((row) => rowIntersectsRange(row, range));
   return `
     <section class="gantt-group">
       <h3>${escapeHtml(title)}</h3>
       <div class="gantt-table">
-        <div class="gantt-row gantt-header">
+        <div class="gantt-row gantt-header" style="${timelineStyle}">
           <span>작업자</span>
           <span>작업</span>
           <div class="gantt-timeline gantt-ticks" style="${timelineStyle}">
-            ${ticks.map((tick) => `<span class="${sameDate(tick, new Date()) ? "is-today" : ""}">${escapeHtml(formatMonthDay(tick))}</span>`).join("")}
+            ${ticks.map((tick) => `<span class="${ganttDayClass(tick)}">${escapeHtml(formatMonthDay(tick))}</span>`).join("")}
           </div>
         </div>
-        ${rows.length ? rows.map((row) => renderGanttRow(row, range, ticks.length)).join("") : `<div class="task-summary-empty">등록된 작업 없음</div>`}
+        ${visibleRows.length ? visibleRows.map((row) => renderGanttRow(row, range, ticks)).join("") : `<div class="task-summary-empty">해당 기간 작업 없음</div>`}
       </div>
     </section>
   `;
 }
 
-function renderGanttRow(row, range, tickCount) {
-  const days = Math.max(1, tickCount);
-  const startIndex = Math.max(0, Math.min(days - 1, daysBetween(range.min, row.start)));
+function renderGanttPeriodControls() {
+  return `
+    <div class="gantt-period-controls" aria-label="간트 기간 선택">
+      ${ganttPeriods.map((period) => `
+        <button class="gantt-period-button ${state.ganttPeriod === period.key ? "is-active" : ""}" type="button" data-period="${escapeHtml(period.key)}">
+          ${escapeHtml(period.label)}
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+function bindGanttPeriodControls() {
+  document.querySelectorAll(".gantt-period-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.ganttPeriod = button.dataset.period || "all";
+      render();
+    });
+  });
+}
+
+function rowIntersectsRange(row, range) {
+  if (!row.hasDeadline) {
+    return row.start >= range.min && row.start <= range.max;
+  }
+  return row.start <= range.max && row.end >= range.min;
+}
+
+function renderGanttRow(row, range, ticks) {
+  const days = Math.max(1, ticks.length);
+  const visibleStart = row.start < range.min ? range.min : row.start;
+  const visibleEnd = row.end > range.max ? range.max : row.end;
+  const startIndex = Math.max(0, Math.min(days - 1, daysBetween(range.min, visibleStart)));
   const endIndex = row.hasDeadline
-    ? Math.max(startIndex, Math.min(days - 1, daysBetween(range.min, row.end)))
+    ? Math.max(startIndex, Math.min(days - 1, daysBetween(range.min, visibleEnd)))
     : startIndex;
   const left = (startIndex / days) * 100;
   const width = ((endIndex - startIndex + 1) / days) * 100;
-  const timelineStyle = `--gantt-days:${days};`;
+  const timelineStyle = `--gantt-days:${days};--gantt-width:${days * 64}px;`;
   return `
-    <div class="gantt-row ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}">
+    <div class="gantt-row ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}" style="${timelineStyle}">
       <span>${escapeHtml(row.student)}</span>
       <span title="${escapeHtml(row.task.title)}">${escapeHtml(row.task.title)}</span>
       <div class="gantt-timeline" style="${timelineStyle}">
+        ${renderGanttDayLayer(ticks)}
         <div class="gantt-bar ${row.part === "플밍" ? "is-dev" : ""} ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}" style="${row.hasDeadline ? `--bar-left:${left.toFixed(2)}%;--bar-width:${width.toFixed(2)}%;` : ""}">
           <span>${escapeHtml(formatDeadline(row.task.deadline, row.task.deadlineText))}</span>
         </div>
       </div>
     </div>
   `;
+}
+
+function renderGanttDayLayer(ticks) {
+  return `
+    <div class="gantt-day-layer" aria-hidden="true">
+      ${ticks.map((tick) => `<span class="${ganttDayClass(tick)}"></span>`).join("")}
+    </div>
+  `;
+}
+
+function ganttDayClass(date) {
+  const classes = [];
+  if (sameDate(date, new Date())) classes.push("is-today");
+  if (isOffDay(date)) classes.push("is-off-day");
+  return classes.join(" ");
+}
+
+function isOffDay(date) {
+  const day = date.getDay();
+  return day === 0 || day === 6 || holidayKeys.includes(dateKey(date));
 }
 
 function renderTeamColumn(title, entries) {
@@ -644,7 +702,7 @@ function renderTeamColumn(title, entries) {
 function renderTeamEntry(entry) {
     const previous = findPreviousEntry(entry);
     const tasks = entry.tasks.length ? entry.tasks.map((task) => renderTask(task)).join("") : renderEmptyTask("오늘 작업 없음");
-    const previousTasks = previous?.tasks?.length ? previous.tasks.map((task) => renderTask(task, true)).join("") : renderEmptyTask("지난 작업 없음", true);
+    const previousTasks = previous?.tasks?.length ? previous.tasks.map((task) => renderTask(task, true)).join("") : "";
     const role = getRole(entry);
     const specialNote = meaningfulSpecialNote(entry.specialNote);
     return `
@@ -662,21 +720,19 @@ function renderTeamEntry(entry) {
         <section class="work-current">
           <div class="task-list">${tasks}</div>
         </section>
-        <details class="previous-work-dropdown">
-          <summary>${escapeHtml(previous?.date || "지난 작업 없음")}</summary>
-          <div class="task-list">${previousTasks}</div>
-        </details>
+        ${previousTasks ? `
+          <details class="previous-work-dropdown">
+            <summary>${escapeHtml(previous.date)}</summary>
+            <div class="task-list">${previousTasks}</div>
+          </details>
+        ` : ""}
       </article>
     `;
 }
 
-function renderTask(task, muted = false, includeComment = false, entry = null) {
+function renderTask(task, muted = false) {
   const overdue = isOverdue(task.deadline);
   const note = meaningfulNote(task.note);
-  const commentKey = entry
-    ? `task-comment:${entry.team}:${entry.date}:${entry.student}:${task.title}`
-    : "";
-  const savedComment = commentKey ? localStorage.getItem(commentKey) || "" : "";
   return `
     <div class="task-card ${muted ? "is-muted" : ""}">
       <div class="task-card-head">
@@ -684,12 +740,6 @@ function renderTask(task, muted = false, includeComment = false, entry = null) {
         <div class="task-deadline ${overdue ? "danger" : ""}">${escapeHtml(formatDeadline(task.deadline, task.deadlineText))}</div>
       </div>
       ${note ? `<p class="task-note">특이사항: ${escapeHtml(note)}</p>` : ""}
-      ${includeComment ? `
-        <label class="task-comment">
-          코멘트
-          <textarea class="task-comment-input" data-comment-key="${escapeHtml(commentKey)}" placeholder="간단한 코멘트">${escapeHtml(savedComment)}</textarea>
-        </label>
-      ` : ""}
     </div>
   `;
 }
@@ -732,6 +782,8 @@ function renderStudentHistory() {
   `;
 
   if (state.studentMode === "overview") {
+    bindGanttPeriodControls();
+
     document.querySelector("#historyPrev")?.addEventListener("click", () => {
       state.historyIndex = Math.max(0, state.historyIndex - 1);
       renderStudentHistory();
@@ -743,12 +795,6 @@ function renderStudentHistory() {
     });
 
     bindHistorySwipe(chronological.length);
-
-    document.querySelectorAll(".task-comment-input").forEach((input) => {
-      input.addEventListener("input", () => {
-        localStorage.setItem(input.dataset.commentKey, input.value);
-      });
-    });
   }
 }
 
@@ -796,25 +842,17 @@ function renderRosterPart(team, part, students) {
   return `
     <section class="roster-part">
       <h3>${escapeHtml(part)}</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>이름</th>
-            <th>역할</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${students.map((student) => {
-            const role = getRosterRole(team, part, student);
-            return `
-              <tr class="role-${roleClass(role)} ${student === state.selectedStudent ? "is-selected" : ""}">
-                <td><button class="roster-student" type="button" data-student="${escapeHtml(student)}">${escapeHtml(student)}</button></td>
-                <td><span class="role-label">${escapeHtml(role)}</span></td>
-              </tr>
-            `;
-          }).join("")}
-        </tbody>
-      </table>
+      <div class="roster-button-grid">
+        ${students.map((student) => {
+          const role = getRosterRole(team, part, student);
+          const label = role === "팀원" ? student : `${student}(${role})`;
+          return `
+            <button class="roster-student ${student === state.selectedStudent ? "is-selected" : ""}" type="button" data-student="${escapeHtml(student)}">
+              ${escapeHtml(label)}
+            </button>
+          `;
+        }).join("")}
+      </div>
     </section>
   `;
 }
@@ -827,7 +865,7 @@ function firstStudentInTeam(team) {
 
 function renderOverviewPanel(selected, history) {
   const rows = ganttRows(history);
-  const range = rows.length ? ganttRange(rows) : null;
+  const range = rows.length ? ganttRange() : null;
   const ticks = range ? ganttTicks(range) : [];
   const activeIndex = state.historyIndex;
   const previous = history[activeIndex - 1] || null;
@@ -840,6 +878,7 @@ function renderOverviewPanel(selected, history) {
         <span>${escapeHtml(range?.label || "작업 없음")}</span>
       </div>
       ${rows.length ? `
+        ${renderGanttPeriodControls()}
         <div class="gantt-board">
           ${renderGanttGroup("개인 작업", rows, range, ticks)}
         </div>
@@ -904,7 +943,7 @@ function renderHistorySlot(entry, mode) {
   }
   return `
     <article class="history-slot ${mode === "active" ? "is-active" : ""}">
-      ${renderHistoryItem(entry, mode === "active")}
+      ${renderHistoryItem(entry)}
     </article>
   `;
 }
@@ -970,7 +1009,7 @@ function bindHistorySwipe(length) {
   }, { passive: true });
 }
 
-function renderHistoryItem(entry, includeTaskComments = false) {
+function renderHistoryItem(entry) {
   return `
     <article class="entry-card">
       <div class="entry-head">
@@ -981,7 +1020,7 @@ function renderHistoryItem(entry, includeTaskComments = false) {
         <span class="badge">${escapeHtml(entry.statusComparedToPrevious || "상태 미지정")}</span>
       </div>
       <div class="task-list">
-        ${entry.tasks.length ? entry.tasks.map((task) => renderTask(task, false, includeTaskComments, entry)).join("") : `<div class="task-row"><span class="task-name">등록된 작업 없음</span></div>`}
+        ${entry.tasks.length ? entry.tasks.map((task) => renderTask(task)).join("") : `<div class="task-row"><span class="task-name">등록된 작업 없음</span></div>`}
       </div>
       ${meaningfulSpecialNote(entry.specialNote) ? `<p class="special-note">${escapeHtml(meaningfulSpecialNote(entry.specialNote))}</p>` : ""}
     </article>
