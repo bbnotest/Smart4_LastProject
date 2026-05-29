@@ -440,10 +440,16 @@ function render() {
   renderTodayNotice();
   els.dateStrip.classList.toggle("is-hidden", state.teamMode !== "daily");
   if (state.teamMode === "overview") {
+    els.teamTaskSummary.classList.remove("is-hidden");
     renderTeamOverview(teamOverviewEntries());
     els.teamList.innerHTML = "";
   } else {
-    els.teamTaskSummary.innerHTML = "";
+    const entries = filteredEntries();
+    const teamNotes = storedTeamNotesForEntries(entries);
+    const delayedItems = teamNotes.length ? [] : delayedTaskItems(entries);
+    const summaryHtml = renderTeamSpecialNotes(teamNotes) || renderDelayedTaskSummary(delayedItems);
+    els.teamTaskSummary.innerHTML = summaryHtml;
+    els.teamTaskSummary.classList.toggle("is-hidden", !summaryHtml);
     renderTeamList(entries);
   }
   renderStudentHistory();
@@ -576,8 +582,6 @@ function renderTeamList(entries) {
   const teamEntries = entries.sort(compareByRole);
   const plannedEntries = teamEntries.filter((entry) => entry.part === "기획");
   const devEntries = teamEntries.filter((entry) => entry.part === "플밍");
-  const teamNotes = storedTeamNotesForEntries(teamEntries);
-  const delayedItems = teamNotes.length ? [] : delayedTaskItems(teamEntries);
 
   if (!teamEntries.length) {
     els.teamList.innerHTML = `<div class="empty-state">업로드된 작업 데이터가 없습니다.</div>`;
@@ -589,8 +593,6 @@ function renderTeamList(entries) {
       ${renderTeamColumn("기획", plannedEntries)}
       ${renderTeamColumn("플밍", devEntries)}
     </section>
-    ${renderTeamSpecialNotes(teamNotes)}
-    ${renderDelayedTaskSummary(delayedItems)}
   `;
 
   document.querySelectorAll(".student-link").forEach((button) => {
@@ -872,21 +874,14 @@ function storedTeamNotesForEntries(entries) {
 function renderTeamSpecialNotes(notes) {
   if (!notes.length) return "";
   return notes.map((note) => `
-    <section class="daily-delay-summary">
-      <h3>${escapeHtml(note.title || "특이사항")}</h3>
+    <details class="daily-delay-summary">
+      <summary>
+        <span>${escapeHtml(note.title || "특이사항")}</span>
+        <small>${escapeHtml(`${note.items?.length || 0}건`)}</small>
+      </summary>
       ${note.message ? `<p>${escapeHtml(note.message)}</p>` : ""}
-      ${note.items?.length ? `
-        <ul>
-          ${note.items.map((item) => `
-            <li>
-              <strong>${escapeHtml([item.part, item.student].filter(Boolean).join(" · "))}</strong>
-              <span>${escapeHtml(item.taskTitle || item.note)}</span>
-              <small>${escapeHtml(item.previousDeadline ? `이전 마감 ${formatDeadline(item.previousDeadline, item.previousDeadlineText)}` : item.previousDeadlineText || "")}</small>
-            </li>
-          `).join("")}
-        </ul>
-      ` : ""}
-    </section>
+      ${note.items?.length ? renderDelayTable(note.items) : ""}
+    </details>
   `).join("");
 }
 
@@ -942,18 +937,51 @@ function findPreviousSameTask(entry, task) {
 function renderDelayedTaskSummary(items) {
   if (!items.length) return "";
   return `
-    <section class="daily-delay-summary">
-      <h3>특이사항: 밀린 작업 추정</h3>
-      <ul>
-        ${items.map(({ entry, task, previous }) => `
-          <li>
-            <strong>${escapeHtml(entry.part)} · ${escapeHtml(entry.student)}</strong>
-            <span>${escapeHtml(task.title)}</span>
-            <small>이전 마감 ${escapeHtml(formatDeadline(previous.task.deadline, previous.task.deadlineText))}</small>
-          </li>
-        `).join("")}
-      </ul>
-    </section>
+    <details class="daily-delay-summary">
+      <summary>
+        <span>특이사항: 밀린 작업 추정</span>
+        <small>${escapeHtml(`${items.length}건`)}</small>
+      </summary>
+      ${renderDelayTable(items.map(({ entry, task, previous }) => ({
+        part: entry.part,
+        student: entry.student,
+        taskTitle: task.title,
+        previousDeadline: previous.task.deadline,
+        previousDeadlineText: previous.task.deadlineText,
+        currentDeadline: task.deadline,
+        currentDeadlineText: task.deadlineText,
+        note: ""
+      })))}
+    </details>
+  `;
+}
+
+function renderDelayTable(items) {
+  return `
+    <div class="delay-table-wrap">
+      <table class="delay-table">
+        <thead>
+          <tr>
+            <th>파트</th>
+            <th>학생</th>
+            <th>작업</th>
+            <th>이전 마감</th>
+            <th>현재 마감</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map((item) => `
+            <tr>
+              <td>${escapeHtml(item.part || "")}</td>
+              <td>${escapeHtml(item.student || "")}</td>
+              <td>${escapeHtml(item.taskTitle || item.note || "")}</td>
+              <td>${escapeHtml(item.previousDeadline ? formatDeadline(item.previousDeadline, item.previousDeadlineText) : item.previousDeadlineText || "미정")}</td>
+              <td>${escapeHtml(item.currentDeadline ? formatDeadline(item.currentDeadline, item.currentDeadlineText) : item.currentDeadlineText || "미정")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
   `;
 }
 
