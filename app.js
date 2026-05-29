@@ -601,15 +601,25 @@ function renderGanttGroup(title, rows, range, ticks) {
   return `
     <section class="gantt-group">
       <h3>${escapeHtml(title)}</h3>
-      <div class="gantt-table">
-        <div class="gantt-row gantt-header" style="${timelineStyle}">
-          <span>작업자</span>
-          <span>작업</span>
-          <div class="gantt-timeline gantt-ticks" style="${timelineStyle}">
-            ${ticks.map((tick) => `<span class="${ganttDayClass(tick)}">${escapeHtml(formatMonthDay(tick))}</span>`).join("")}
+      <div class="gantt-table" style="${timelineStyle}">
+        <div class="gantt-fixed-column">
+          <div class="gantt-fixed-row gantt-header">
+            <span>작업자</span>
+            <span>작업</span>
           </div>
+          ${visibleRows.length ? visibleRows.map(renderGanttFixedCells).join("") : `<div class="task-summary-empty">해당 기간 작업 없음</div>`}
         </div>
-        ${visibleRows.length ? visibleRows.map((row) => renderGanttRow(row, range, ticks)).join("") : `<div class="task-summary-empty">해당 기간 작업 없음</div>`}
+        <div class="gantt-scroll-column">
+          <div class="gantt-date-header" style="${timelineStyle}">
+            <div class="gantt-month-row">
+              ${renderGanttMonthCells(ticks)}
+            </div>
+            <div class="gantt-day-row">
+              ${ticks.map((tick) => `<span class="${ganttDayClass(tick)}">${escapeHtml(String(tick.getDate()).padStart(2, "0"))}</span>`).join("")}
+            </div>
+          </div>
+          ${visibleRows.length ? visibleRows.map((row) => renderGanttTimelineCell(row, range, ticks)).join("") : ""}
+        </div>
       </div>
     </section>
   `;
@@ -643,7 +653,16 @@ function rowIntersectsRange(row, range) {
   return row.start <= range.max && row.end >= range.min;
 }
 
-function renderGanttRow(row, range, ticks) {
+function renderGanttFixedCells(row) {
+  return `
+    <div class="gantt-fixed-row ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}">
+      <span>${escapeHtml(row.student)}</span>
+      <span title="${escapeHtml(row.task.title)}">${escapeHtml(row.task.title)}</span>
+    </div>
+  `;
+}
+
+function renderGanttTimelineCell(row, range, ticks) {
   const days = Math.max(1, ticks.length);
   const visibleStart = row.start < range.min ? range.min : row.start;
   const visibleEnd = row.end > range.max ? range.max : row.end;
@@ -655,9 +674,7 @@ function renderGanttRow(row, range, ticks) {
   const width = ((endIndex - startIndex + 1) / days) * 100;
   const timelineStyle = `--gantt-days:${days};--gantt-width:${days * 64}px;`;
   return `
-    <div class="gantt-row ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}" style="${timelineStyle}">
-      <span>${escapeHtml(row.student)}</span>
-      <span title="${escapeHtml(row.task.title)}">${escapeHtml(row.task.title)}</span>
+    <div class="gantt-timeline-row ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}" style="${timelineStyle}">
       <div class="gantt-timeline" style="${timelineStyle}">
         ${renderGanttDayLayer(ticks)}
         <div class="gantt-bar ${row.part === "플밍" ? "is-dev" : ""} ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}" style="${row.hasDeadline ? `--bar-left:${left.toFixed(2)}%;--bar-width:${width.toFixed(2)}%;` : ""}">
@@ -666,6 +683,20 @@ function renderGanttRow(row, range, ticks) {
       </div>
     </div>
   `;
+}
+
+function renderGanttMonthCells(ticks) {
+  const groups = [];
+  ticks.forEach((tick) => {
+    const month = String(tick.getMonth() + 1).padStart(2, "0");
+    const current = groups[groups.length - 1];
+    if (current?.month === month) {
+      current.count += 1;
+    } else {
+      groups.push({ month, count: 1 });
+    }
+  });
+  return groups.map((group) => `<span style="grid-column: span ${group.count};">${escapeHtml(group.month)}</span>`).join("");
 }
 
 function renderGanttDayLayer(ticks) {

@@ -460,24 +460,39 @@ textarea:focus {
 
 .gantt-table {
   display: grid;
-  overflow: auto;
+  grid-template-columns: 312px minmax(0, 1fr);
+  overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 6px;
 }
 
-.gantt-row {
+.gantt-fixed-column {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+}
+
+.gantt-scroll-column {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.gantt-fixed-row {
   display: grid;
-  grid-template-columns: 92px minmax(220px, 0.8fr) minmax(var(--gantt-width, 460px), 1.7fr);
-  min-width: calc(312px + var(--gantt-width, 460px));
+  grid-template-columns: 92px minmax(0, 1fr);
+  min-height: 38px;
   border-top: 1px solid var(--line);
   font-size: 13px;
 }
 
-.gantt-row:first-child {
+.gantt-fixed-row:first-child,
+.gantt-timeline-row:first-of-type {
   border-top: 0;
 }
 
-.gantt-row > span {
+.gantt-fixed-row > span {
   min-width: 0;
   padding: 9px 10px;
   overflow: hidden;
@@ -485,19 +500,33 @@ textarea:focus {
   white-space: nowrap;
 }
 
-.gantt-row.is-unscheduled {
+.gantt-fixed-row.is-unscheduled,
+.gantt-timeline-row.is-unscheduled {
   color: var(--muted);
   background: var(--panel-soft);
 }
 
-.gantt-row.is-due-today {
+.gantt-fixed-row.is-due-today,
+.gantt-timeline-row.is-due-today {
   background: rgba(37, 99, 235, 0.06);
 }
 
 .gantt-header {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 5;
+  color: var(--muted);
+  background: var(--panel-soft);
+  font-weight: 700;
+}
+
+.gantt-date-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: grid;
+  grid-template-rows: 26px 32px;
+  min-width: var(--gantt-width, 460px);
   color: var(--muted);
   background: var(--panel-soft);
   font-weight: 700;
@@ -510,6 +539,11 @@ textarea:focus {
   background:
     linear-gradient(90deg, transparent calc(100% - 1px), var(--line) 0) 0 0 / calc(100% / var(--gantt-days, 1)) 100%,
     var(--panel);
+}
+
+.gantt-timeline-row {
+  min-width: var(--gantt-width, 460px);
+  border-top: 1px solid var(--line);
 }
 
 .gantt-day-layer {
@@ -532,16 +566,17 @@ textarea:focus {
   background: rgba(37, 99, 235, 0.12);
 }
 
-.gantt-ticks {
+.gantt-month-row,
+.gantt-day-row {
   display: grid;
   grid-template-columns: repeat(var(--gantt-days, 1), minmax(64px, 1fr));
   align-items: center;
   gap: 0;
-  overflow: hidden;
   background: var(--panel-soft);
 }
 
-.gantt-ticks span {
+.gantt-month-row span,
+.gantt-day-row span {
   min-width: 0;
   padding: 0 8px;
   color: var(--muted);
@@ -550,7 +585,22 @@ textarea:focus {
   white-space: nowrap;
 }
 
-.gantt-ticks span.is-today {
+.gantt-month-row span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.gantt-day-row span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid var(--line);
+}
+
+.gantt-day-row span.is-today {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -560,7 +610,7 @@ textarea:focus {
   font-weight: 800;
 }
 
-.gantt-ticks span.is-off-day:not(.is-today) {
+.gantt-day-row span.is-off-day:not(.is-today) {
   background: rgba(148, 163, 184, 0.24);
 }
 
@@ -1196,8 +1246,11 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 
-  .gantt-row {
-    grid-template-columns: 82px minmax(180px, 0.8fr) minmax(var(--gantt-width, 340px), 1.4fr);
-    min-width: calc(262px + var(--gantt-width, 340px));
+  .gantt-table {
+    grid-template-columns: 262px minmax(0, 1fr);
+  }
+
+  .gantt-fixed-row {
+    grid-template-columns: 82px minmax(0, 1fr);
   }
 }
