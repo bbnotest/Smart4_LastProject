@@ -57,10 +57,10 @@
 
       <section id="teamPage" class="page-view">
         <section class="filters">
-          <label>
-            팀
-            <select id="teamFilter"></select>
-          </label>
+          <div>
+            <span class="control-label">팀</span>
+            <div id="teamFilterButtons" class="team-button-group" aria-label="팀 선택"></div>
+          </div>
         </section>
         <div class="subtabs team-mode-tabs" role="tablist" aria-label="팀별 작업 보기 선택">
           <button id="teamOverviewTab" class="subtab-button is-active" type="button">개요</button>
@@ -73,10 +73,10 @@
 
       <section id="studentPage" class="page-view is-hidden">
         <section class="student-history-toolbar">
-          <label>
-            팀
-            <select id="historyTeamFilter"></select>
-          </label>
+          <div>
+            <span class="control-label">팀</span>
+            <div id="historyTeamFilterButtons" class="team-button-group" aria-label="학생 히스토리 팀 선택"></div>
+          </div>
           <label>
             학생 검색
             <input id="studentSearchInput" type="search" placeholder="학생 이름 입력">

@@ -97,8 +97,8 @@ const els = {
   jsonInput: document.querySelector("#jsonInput"),
   uploadMessage: document.querySelector("#uploadMessage"),
   adminStatus: document.querySelector("#adminStatus"),
-  teamFilter: document.querySelector("#teamFilter"),
-  historyTeamFilter: document.querySelector("#historyTeamFilter"),
+  teamFilterButtons: document.querySelector("#teamFilterButtons"),
+  historyTeamFilterButtons: document.querySelector("#historyTeamFilterButtons"),
   teamRosterTable: document.querySelector("#teamRosterTable"),
   dateStrip: document.querySelector("#dateStrip"),
   teamTaskSummary: document.querySelector("#teamTaskSummary"),
@@ -201,13 +201,6 @@ function setTeamMode(mode) {
   render();
 }
 
-els.historyTeamFilter.addEventListener("change", () => {
-  state.historyTeam = els.historyTeamFilter.value;
-  state.selectedStudent = firstStudentInTeam(state.historyTeam);
-  els.studentSearchInput.value = "";
-  renderStudentHistory();
-});
-
 els.jsonInput.addEventListener("change", async (event) => {
   const files = Array.from(event.target.files || []);
   if (!files.length) return;
@@ -218,13 +211,6 @@ els.jsonInput.addEventListener("change", async (event) => {
   }
   await uploadJsonFiles(files);
   event.target.value = "";
-});
-
-[els.teamFilter].forEach((select) => {
-  select.addEventListener("change", () => {
-    state.filters.team = els.teamFilter.value;
-    render();
-  });
 });
 
 function showLogin() {
@@ -416,20 +402,50 @@ function renderTodayNotice() {
 function syncFilterOptions() {
   const dates = unique(state.entries.map((entry) => entry.date)).sort().reverse();
 
-  fillSelect(els.teamFilter, monitoredTeams, "");
-  fillSelect(els.historyTeamFilter, monitoredTeams, "");
-  state.historyTeam = els.historyTeamFilter.value;
+  if (!monitoredTeams.includes(state.filters.team)) {
+    state.filters.team = monitoredTeams[0];
+  }
+  if (!monitoredTeams.includes(state.historyTeam)) {
+    state.historyTeam = monitoredTeams[0];
+  }
+  renderTeamFilterButtons();
+  renderHistoryTeamFilterButtons();
   focusTodayDate(dates);
   renderDateStrip(dates);
 }
 
-function fillSelect(select, values, allLabel) {
-  const current = select.value || values[0];
-  select.innerHTML = (allLabel ? `<option value="all">${allLabel}</option>` : "") + values.map((value) => {
-    return `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`;
-  }).join("");
-  select.value = values.includes(current) ? current : values[0];
-  state.filters[select.id.replace("Filter", "")] = select.value;
+function renderTeamFilterButtons() {
+  els.teamFilterButtons.innerHTML = monitoredTeams.map((team) => `
+    <button class="team-filter-button ${state.filters.team === team ? "is-active" : ""}" type="button" data-team="${escapeHtml(team)}">
+      ${escapeHtml(team)}
+    </button>
+  `).join("");
+
+  els.teamFilterButtons.querySelectorAll(".team-filter-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.filters.team = button.dataset.team || monitoredTeams[0];
+      render();
+    });
+  });
+}
+
+function renderHistoryTeamFilterButtons() {
+  els.historyTeamFilterButtons.innerHTML = monitoredTeams.map((team) => `
+    <button class="team-filter-button ${state.historyTeam === team ? "is-active" : ""}" type="button" data-team="${escapeHtml(team)}">
+      ${escapeHtml(team)}
+    </button>
+  `).join("");
+
+  els.historyTeamFilterButtons.querySelectorAll(".team-filter-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.historyTeam = button.dataset.team || monitoredTeams[0];
+      state.selectedStudent = firstStudentInTeam(state.historyTeam);
+      state.historyIndex = -1;
+      els.studentSearchInput.value = "";
+      renderStudentHistory();
+      renderHistoryTeamFilterButtons();
+    });
+  });
 }
 
 function focusTodayDate(dates) {
@@ -843,7 +859,6 @@ function findStudentByKeyword(value) {
 function selectStudent(student, team = "") {
   if (team && monitoredTeams.includes(team)) {
     state.historyTeam = team;
-    els.historyTeamFilter.value = team;
   }
   state.selectedStudent = student;
   state.historyIndex = -1;
