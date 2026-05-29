@@ -613,19 +613,14 @@ function ganttTicks(range) {
 function renderGanttGroup(title, rows, range, ticks) {
   const days = Math.max(1, ticks.length);
   const timelineStyle = `--gantt-days:${days};--gantt-width:${days * 42}px;`;
-  const visibleRows = rows.filter((row) => rowIntersectsRange(row, range));
+  const visibleRows = rows.filter((row) => rowShouldShowInGantt(row) && rowIntersectsRange(row, range));
   return `
     <section class="gantt-group">
       <h3>${escapeHtml(title)}</h3>
       <div class="gantt-table" style="${timelineStyle}">
-        <div class="gantt-fixed-column">
-          <div class="gantt-fixed-row gantt-header">
-            <span>작업자</span>
-            <span>작업</span>
-          </div>
-          ${visibleRows.length ? visibleRows.map(renderGanttFixedCells).join("") : `<div class="task-summary-empty">해당 기간 작업 없음</div>`}
-        </div>
-        <div class="gantt-scroll-column">
+        <div class="gantt-row gantt-header" style="${timelineStyle}">
+          <span class="gantt-sticky-cell gantt-student-cell">작업자</span>
+          <span class="gantt-sticky-cell gantt-task-cell">작업</span>
           <div class="gantt-date-header" style="${timelineStyle}">
             <div class="gantt-month-row">
               ${renderGanttMonthCells(ticks)}
@@ -634,8 +629,8 @@ function renderGanttGroup(title, rows, range, ticks) {
               ${ticks.map((tick) => `<span class="${ganttDayClass(tick)}">${escapeHtml(String(tick.getDate()).padStart(2, "0"))}</span>`).join("")}
             </div>
           </div>
-          ${visibleRows.length ? visibleRows.map((row) => renderGanttTimelineCell(row, range, ticks)).join("") : ""}
         </div>
+        ${visibleRows.length ? visibleRows.map((row) => renderGanttRow(row, range, ticks)).join("") : `<div class="task-summary-empty">해당 기간 작업 없음</div>`}
       </div>
     </section>
   `;
@@ -669,16 +664,11 @@ function rowIntersectsRange(row, range) {
   return row.start <= range.max && row.end >= range.min;
 }
 
-function renderGanttFixedCells(row) {
-  return `
-    <div class="gantt-fixed-row ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}">
-      <span>${escapeHtml(row.student)}</span>
-      <span title="${escapeHtml(row.task.title)}">${escapeHtml(row.task.title)}</span>
-    </div>
-  `;
+function rowShouldShowInGantt(row) {
+  return !(row.part === "기획" && (row.role === "팀장" || row.role === "PM") && !row.hasDeadline);
 }
 
-function renderGanttTimelineCell(row, range, ticks) {
+function renderGanttRow(row, range, ticks) {
   const days = Math.max(1, ticks.length);
   const visibleStart = row.start < range.min ? range.min : row.start;
   const visibleEnd = row.end > range.max ? range.max : row.end;
@@ -690,7 +680,9 @@ function renderGanttTimelineCell(row, range, ticks) {
   const width = ((endIndex - startIndex + 1) / days) * 100;
   const timelineStyle = `--gantt-days:${days};--gantt-width:${days * 42}px;`;
   return `
-    <div class="gantt-timeline-row ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}" style="${timelineStyle}">
+    <div class="gantt-row ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}" style="${timelineStyle}">
+      <span class="gantt-sticky-cell gantt-student-cell">${escapeHtml(row.student)}</span>
+      <span class="gantt-sticky-cell gantt-task-cell" title="${escapeHtml(row.task.title)}">${escapeHtml(row.task.title)}</span>
       <div class="gantt-timeline" style="${timelineStyle}">
         ${renderGanttDayLayer(ticks)}
         <div class="gantt-bar ${row.part === "플밍" ? "is-dev" : ""} ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}" style="${row.hasDeadline ? `--bar-left:${left.toFixed(2)}%;--bar-width:${width.toFixed(2)}%;` : ""}">

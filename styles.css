@@ -496,43 +496,26 @@ textarea:focus {
 
 .gantt-table {
   display: grid;
-  grid-template-columns: 312px minmax(0, 1fr);
-  overflow: hidden;
+  overflow: auto;
   border: 1px solid var(--line);
   border-radius: 6px;
 }
 
-.gantt-fixed-column {
-  position: sticky;
-  left: 0;
-  z-index: 4;
-  background: var(--panel);
-  border-right: 1px solid var(--line);
-}
-
-.gantt-scroll-column {
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
-.gantt-fixed-row {
+.gantt-row {
   display: grid;
-  grid-template-columns: 92px minmax(0, 1fr);
-  min-height: 38px;
+  grid-template-columns: 92px minmax(220px, 220px) minmax(var(--gantt-width, 460px), 1fr);
+  min-width: calc(312px + var(--gantt-width, 460px));
   border-top: 1px solid var(--line);
   font-size: 13px;
 }
 
-.gantt-fixed-row.gantt-header {
-  min-height: 58px;
-}
-
-.gantt-fixed-row:first-child,
-.gantt-timeline-row:first-of-type {
+.gantt-row:first-child {
   border-top: 0;
 }
 
-.gantt-fixed-row > span {
+.gantt-sticky-cell {
+  position: sticky;
+  z-index: 2;
   display: flex;
   align-items: center;
   min-width: 0;
@@ -540,17 +523,33 @@ textarea:focus {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  background: var(--panel);
 }
 
-.gantt-fixed-row.is-unscheduled,
-.gantt-timeline-row.is-unscheduled {
+.gantt-student-cell {
+  left: 0;
+}
+
+.gantt-task-cell {
+  left: 92px;
+  border-right: 1px solid var(--line);
+}
+
+.gantt-row.is-unscheduled {
   color: var(--muted);
   background: var(--panel-soft);
 }
 
-.gantt-fixed-row.is-due-today,
-.gantt-timeline-row.is-due-today {
+.gantt-row.is-unscheduled .gantt-sticky-cell {
+  background: var(--panel-soft);
+}
+
+.gantt-row.is-due-today {
   background: rgba(37, 99, 235, 0.06);
+}
+
+.gantt-row.is-due-today .gantt-sticky-cell {
+  background: #eef4ff;
 }
 
 .gantt-header {
@@ -560,6 +559,11 @@ textarea:focus {
   color: var(--muted);
   background: var(--panel-soft);
   font-weight: 700;
+}
+
+.gantt-header .gantt-sticky-cell {
+  z-index: 6;
+  background: var(--panel-soft);
 }
 
 .gantt-date-header {
@@ -582,11 +586,6 @@ textarea:focus {
   background:
     linear-gradient(90deg, transparent calc(100% - 1px), var(--line) 0) 0 0 / calc(100% / var(--gantt-days, 1)) 100%,
     var(--panel);
-}
-
-.gantt-timeline-row {
-  min-width: var(--gantt-width, 460px);
-  border-top: 1px solid var(--line);
 }
 
 .gantt-day-layer {
@@ -1292,10 +1291,15 @@ textarea:focus {
   }
 
   .gantt-table {
-    grid-template-columns: 262px minmax(0, 1fr);
+    overflow: auto;
   }
 
-  .gantt-fixed-row {
-    grid-template-columns: 82px minmax(0, 1fr);
+  .gantt-row {
+    grid-template-columns: 82px minmax(180px, 180px) minmax(var(--gantt-width, 340px), 1fr);
+    min-width: calc(262px + var(--gantt-width, 340px));
+  }
+
+  .gantt-task-cell {
+    left: 82px;
   }
 }
