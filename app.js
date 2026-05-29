@@ -705,7 +705,7 @@ function issueHistoryItems() {
     }, { team: entry.team, date: entry.date })))
     .filter((item) => !storedKeys.has(item.key));
 
-  return [...stored, ...computed]
+  return uniqueIssueContexts([...stored, ...computed])
     .map((context) => {
       state.delayContexts.set(context.key, context);
       const review = delayReviewForKey(context.key);
@@ -719,6 +719,41 @@ function issueHistoryItems() {
       || a.part.localeCompare(b.part)
       || a.student.localeCompare(b.student)
       || a.currentTitle.localeCompare(b.currentTitle));
+}
+
+function uniqueIssueContexts(items) {
+  const uniqueItems = new Map();
+  items.forEach((item) => {
+    const key = issueIdentityKey(item);
+    if (!uniqueItems.has(key)) {
+      uniqueItems.set(key, item);
+      return;
+    }
+
+    const existing = uniqueItems.get(key);
+    const existingHasReview = Boolean(delayReviewForKey(existing.key));
+    const itemHasReview = Boolean(delayReviewForKey(item.key));
+    if (itemHasReview && !existingHasReview) {
+      uniqueItems.set(key, item);
+      return;
+    }
+
+    const existingHasPreviousDate = Boolean(existing.previousDate);
+    if (!existingHasPreviousDate && item.previousDate) {
+      uniqueItems.set(key, item);
+    }
+  });
+  return Array.from(uniqueItems.values());
+}
+
+function issueIdentityKey(item) {
+  return [
+    item.team,
+    item.date,
+    item.part,
+    item.student,
+    normalizedTaskTitle(item.currentTitle || item.note)
+  ].join("|");
 }
 
 function renderIssueHistoryItem(item) {
@@ -1151,10 +1186,18 @@ function buildDelayContext(item, note = {}) {
   const currentTask = currentEntry?.tasks?.find((task) => normalizedTaskTitle(task.title) === normalizedTaskTitle(currentTitle))
     || currentEntry?.tasks?.find((task) => task.title.includes(currentTitle) || currentTitle.includes(task.title));
   const previous = currentEntry && currentTask ? findPreviousSameTask(currentEntry, currentTask) : null;
-  const previousTitle = clean(item.previousTaskTitle || previous?.task?.title || currentTitle);
-  const previousDate = clean(item.previousDate || previous?.entry?.date || "");
-  const previousDeadline = item.previousDeadline || previous?.task?.deadline || null;
-  const previousDeadlineText = clean(item.previousDeadlineText || previous?.task?.deadlineText);
+  const fallbackPrevious = previous || findPreviousEntryByDelayItem({
+    team,
+    date,
+    part,
+    student,
+    taskTitle: currentTitle,
+    previousDeadlineText: item.previousDeadlineText
+  });
+  const previousTitle = clean(item.previousTaskTitle || fallbackPrevious?.task?.title || currentTitle);
+  const previousDate = clean(item.previousDate || fallbackPrevious?.entry?.date || "");
+  const previousDeadline = item.previousDeadline || fallbackPrevious?.task?.deadline || null;
+  const previousDeadlineText = clean(item.previousDeadlineText || fallbackPrevious?.task?.deadlineText);
   const currentDeadline = item.currentDeadline || currentTask?.deadline || null;
   const currentDeadlineText = clean(item.currentDeadlineText || currentTask?.deadlineText);
   const key = delayReviewKey({
@@ -1186,6 +1229,25 @@ function buildDelayContext(item, note = {}) {
     currentNote: clean(currentTask?.note || item.note),
     specialNote: clean(currentEntry?.specialNote)
   };
+}
+
+function findPreviousEntryByDelayItem(item) {
+  const normalizedTitle = normalizedTaskTitle(item.taskTitle);
+  return state.entries
+    .filter((entry) => {
+      return entry.team === item.team
+        && entry.part === item.part
+        && entry.student === item.student
+        && entry.date < item.date;
+    })
+    .flatMap((entry) => entry.tasks.map((task) => ({ entry, task })))
+    .filter(({ task }) => {
+      const taskTitle = normalizedTaskTitle(task.title);
+      return taskTitle === normalizedTitle
+        || taskTitle.includes(normalizedTitle)
+        || normalizedTitle.includes(taskTitle);
+    })
+    .sort((a, b) => b.entry.date.localeCompare(a.entry.date))[0];
 }
 
 function delayReviewKey(value) {
@@ -1227,7 +1289,7 @@ function openDelayReviewModal(key) {
       <div class="review-modal-head">
         <div>
           <p class="eyebrow">${escapeHtml(context.team)} · ${escapeHtml(context.part)} · ${escapeHtml(context.student)}</p>
-          <h2>밀린 작업 추정 검토</h2>
+          <h2>검토</h2>
         </div>
         <button class="icon-button" type="button" data-review-close="true" aria-label="닫기">×</button>
       </div>
