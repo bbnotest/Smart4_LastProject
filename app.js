@@ -58,6 +58,7 @@ const teamRoster = {
 
 const state = {
   entries: [],
+  teamNotes: [],
   comments: [],
   user: null,
   view: "team",
@@ -260,6 +261,8 @@ async function loadRemoteData() {
     els.permissionNotice.classList.add("is-hidden");
     const entriesSnapshot = await fb.getDocs(fb.query(fb.collection(db, "scrumEntries"), fb.orderBy("date", "desc")));
     state.entries = entriesSnapshot.docs.map((item) => item.data());
+    const notesSnapshot = await fb.getDocs(fb.query(fb.collection(db, "scrumTeamNotes"), fb.orderBy("date", "desc")));
+    state.teamNotes = notesSnapshot.docs.map((item) => item.data());
 
     render();
   } catch (error) {
@@ -296,6 +299,27 @@ async function importEntries(entries, options = {}) {
   }
 }
 
+async function importTeamNotes(notes, options = {}) {
+  if (!options.team || !options.date) return;
+
+  if (options.overwrite) {
+    await removeTeamNotesForTeamDate(options.team, options.date);
+  }
+
+  if (!notes.length) return;
+
+  if (firebaseReady) {
+    await Promise.all(notes.map((note, index) => {
+      const id = [note.team, note.date, index + 1].map(slug).join("_");
+      return fb.setDoc(fb.doc(db, "scrumTeamNotes", id), note, { merge: true });
+    }));
+    return;
+  }
+
+  state.teamNotes = state.teamNotes.filter((note) => !(note.team === options.team && note.date === options.date));
+  state.teamNotes.push(...notes);
+}
+
 async function removeEntriesForTeamDate(team, date) {
   if (firebaseReady) {
     const snapshot = await fb.getDocs(fb.query(
@@ -308,6 +332,20 @@ async function removeEntriesForTeamDate(team, date) {
   }
 
   state.entries = state.entries.filter((entry) => !(entry.team === team && entry.date === date));
+}
+
+async function removeTeamNotesForTeamDate(team, date) {
+  if (firebaseReady) {
+    const snapshot = await fb.getDocs(fb.query(
+      fb.collection(db, "scrumTeamNotes"),
+      fb.where("team", "==", team),
+      fb.where("date", "==", date)
+    ));
+    await Promise.all(snapshot.docs.map((item) => fb.deleteDoc(fb.doc(db, "scrumTeamNotes", item.id))));
+    return;
+  }
+
+  state.teamNotes = state.teamNotes.filter((note) => !(note.team === team && note.date === date));
 }
 
 async function uploadJsonFiles(files) {
@@ -323,11 +361,23 @@ async function uploadJsonFiles(files) {
     for (const file of files) {
       const fileInfo = parseScrumFileName(file.name);
       const parsed = JSON.parse(await file.text());
-      await importEntries(normalizeEntries(parsed, { team: fileInfo.team, date: fileInfo.date }), {
+      const entries = normalizeEntries(parsed, { team: fileInfo.team, date: fileInfo.date });
+      const teamNotes = normalizeTeamNotes(parsed, { team: fileInfo.team, date: fileInfo.date });
+      await importEntries(entries, {
         team: fileInfo.team,
         date: fileInfo.date,
         overwrite: true
       });
+      await importTeamNotes(teamNotes, {
+        team: fileInfo.team,
+        date: fileInfo.date,
+        overwrite: true
+      });
+      if (firebaseReady) {
+        await loadRemoteData();
+      } else {
+        render();
+      }
     }
     setUploadMessage(`${files.length}개 파일 업로드를 완료했습니다.`);
   } catch (error) {
@@ -361,6 +411,27 @@ function normalizeEntries(payload, override = {}) {
     specialNote: clean(row.specialNote),
     statusComparedToPrevious: clean(row.statusComparedToPrevious)
   })).filter((row) => row.team && row.date && row.student);
+}
+
+function normalizeTeamNotes(payload, override = {}) {
+  const rows = Array.isArray(payload?.teamSpecialNotes) ? payload.teamSpecialNotes : [];
+  return rows.map((row) => ({
+    team: clean(override.team || row.team),
+    date: clean(override.date || row.date),
+    type: clean(row.type || "note"),
+    title: clean(row.title),
+    message: clean(row.message),
+    items: Array.isArray(row.items) ? row.items.map((item) => ({
+      part: clean(item.part),
+      student: clean(item.student),
+      taskTitle: clean(item.taskTitle),
+      previousDeadline: parseDeadlineValue(item.previousDeadline),
+      previousDeadlineText: clean(item.previousDeadlineText),
+      currentDeadline: parseDeadlineValue(item.currentDeadline),
+      currentDeadlineText: clean(item.currentDeadlineText),
+      note: clean(item.note)
+    })).filter((item) => item.student || item.taskTitle || item.note) : []
+  })).filter((row) => row.team && row.date && (row.title || row.message || row.items.length));
 }
 
 function render() {
@@ -505,7 +576,8 @@ function renderTeamList(entries) {
   const teamEntries = entries.sort(compareByRole);
   const plannedEntries = teamEntries.filter((entry) => entry.part === "기획");
   const devEntries = teamEntries.filter((entry) => entry.part === "플밍");
-  const delayedItems = delayedTaskItems(teamEntries);
+  const teamNotes = storedTeamNotesForEntries(teamEntries);
+  const delayedItems = teamNotes.length ? [] : delayedTaskItems(teamEntries);
 
   if (!teamEntries.length) {
     els.teamList.innerHTML = `<div class="empty-state">업로드된 작업 데이터가 없습니다.</div>`;
@@ -517,6 +589,7 @@ function renderTeamList(entries) {
       ${renderTeamColumn("기획", plannedEntries)}
       ${renderTeamColumn("플밍", devEntries)}
     </section>
+    ${renderTeamSpecialNotes(teamNotes)}
     ${renderDelayedTaskSummary(delayedItems)}
   `;
 
@@ -786,6 +859,35 @@ function renderTeamColumn(title, entries) {
       </div>
     </section>
   `;
+}
+
+function storedTeamNotesForEntries(entries) {
+  const team = entries[0]?.team || state.filters.team;
+  const date = entries[0]?.date || state.filters.date;
+  return state.teamNotes
+    .filter((note) => note.team === team && note.date === date)
+    .sort((a, b) => a.type.localeCompare(b.type) || a.title.localeCompare(b.title));
+}
+
+function renderTeamSpecialNotes(notes) {
+  if (!notes.length) return "";
+  return notes.map((note) => `
+    <section class="daily-delay-summary">
+      <h3>${escapeHtml(note.title || "특이사항")}</h3>
+      ${note.message ? `<p>${escapeHtml(note.message)}</p>` : ""}
+      ${note.items?.length ? `
+        <ul>
+          ${note.items.map((item) => `
+            <li>
+              <strong>${escapeHtml([item.part, item.student].filter(Boolean).join(" · "))}</strong>
+              <span>${escapeHtml(item.taskTitle || item.note)}</span>
+              <small>${escapeHtml(item.previousDeadline ? `이전 마감 ${formatDeadline(item.previousDeadline, item.previousDeadlineText)}` : item.previousDeadlineText || "")}</small>
+            </li>
+          `).join("")}
+        </ul>
+      ` : ""}
+    </section>
+  `).join("");
 }
 
 function delayedTaskItems(entries) {

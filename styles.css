@@ -736,6 +736,13 @@ textarea:focus {
   font-size: 14px;
 }
 
+.daily-delay-summary p {
+  margin: 0 0 8px;
+  color: #92400e;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .daily-delay-summary ul {
   display: grid;
   gap: 6px;
