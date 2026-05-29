@@ -550,7 +550,7 @@ textarea:focus {
   position: absolute;
   inset: 0;
   display: grid;
-  grid-template-columns: repeat(var(--gantt-days, 1), minmax(64px, 1fr));
+  grid-template-columns: repeat(var(--gantt-days, 1), minmax(42px, 1fr));
   pointer-events: none;
 }
 
@@ -569,7 +569,7 @@ textarea:focus {
 .gantt-month-row,
 .gantt-day-row {
   display: grid;
-  grid-template-columns: repeat(var(--gantt-days, 1), minmax(64px, 1fr));
+  grid-template-columns: repeat(var(--gantt-days, 1), minmax(42px, 1fr));
   align-items: center;
   gap: 0;
   background: var(--panel-soft);
@@ -578,9 +578,9 @@ textarea:focus {
 .gantt-month-row span,
 .gantt-day-row span {
   min-width: 0;
-  padding: 0 8px;
+  padding: 0 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   text-align: center;
   white-space: nowrap;
 }

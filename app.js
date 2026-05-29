@@ -596,7 +596,7 @@ function ganttTicks(range) {
 
 function renderGanttGroup(title, rows, range, ticks) {
   const days = Math.max(1, ticks.length);
-  const timelineStyle = `--gantt-days:${days};--gantt-width:${days * 64}px;`;
+  const timelineStyle = `--gantt-days:${days};--gantt-width:${days * 42}px;`;
   const visibleRows = rows.filter((row) => rowIntersectsRange(row, range));
   return `
     <section class="gantt-group">
@@ -672,7 +672,7 @@ function renderGanttTimelineCell(row, range, ticks) {
     : startIndex;
   const left = (startIndex / days) * 100;
   const width = ((endIndex - startIndex + 1) / days) * 100;
-  const timelineStyle = `--gantt-days:${days};--gantt-width:${days * 64}px;`;
+  const timelineStyle = `--gantt-days:${days};--gantt-width:${days * 42}px;`;
   return `
     <div class="gantt-timeline-row ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}" style="${timelineStyle}">
       <div class="gantt-timeline" style="${timelineStyle}">
