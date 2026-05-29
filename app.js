@@ -646,6 +646,7 @@ function renderTeamEntry(entry) {
     const tasks = entry.tasks.length ? entry.tasks.map((task) => renderTask(task)).join("") : renderEmptyTask("오늘 작업 없음");
     const previousTasks = previous?.tasks?.length ? previous.tasks.map((task) => renderTask(task, true)).join("") : renderEmptyTask("지난 작업 없음", true);
     const role = getRole(entry);
+    const specialNote = meaningfulSpecialNote(entry.specialNote);
     return `
       <article class="entry-card">
         <div class="entry-head">
@@ -654,6 +655,7 @@ function renderTeamEntry(entry) {
               <button class="student-link" type="button" data-team="${escapeHtml(entry.team)}" data-student="${escapeHtml(entry.student)}">${escapeHtml(entry.student)}</button>
               ${role !== "팀원" ? `<span class="role-tag">${escapeHtml(role)}</span>` : ""}
             </h2>
+            ${specialNote ? `<p class="entry-special-note">${escapeHtml(specialNote)}</p>` : ""}
           </div>
           <span class="badge">${escapeHtml(entry.statusComparedToPrevious || "상태 미지정")}</span>
         </div>
@@ -664,7 +666,6 @@ function renderTeamEntry(entry) {
           <summary>${escapeHtml(previous?.date || "지난 작업 없음")}</summary>
           <div class="task-list">${previousTasks}</div>
         </details>
-        <p class="personal-note">개인 특이사항: ${escapeHtml(entry.specialNote || "없음")}</p>
       </article>
     `;
 }
@@ -891,7 +892,7 @@ function renderChronicleItem(entry) {
             </li>
           `).join("") : `<li><span>등록된 작업 없음</span></li>`}
         </ul>
-        ${entry.specialNote ? `<p class="special-note">특이사항: ${escapeHtml(entry.specialNote)}</p>` : ""}
+        ${meaningfulSpecialNote(entry.specialNote) ? `<p class="special-note">${escapeHtml(meaningfulSpecialNote(entry.specialNote))}</p>` : ""}
       </div>
     </article>
   `;
@@ -982,7 +983,7 @@ function renderHistoryItem(entry, includeTaskComments = false) {
       <div class="task-list">
         ${entry.tasks.length ? entry.tasks.map((task) => renderTask(task, false, includeTaskComments, entry)).join("") : `<div class="task-row"><span class="task-name">등록된 작업 없음</span></div>`}
       </div>
-      ${entry.specialNote ? `<p class="special-note">특이사항: ${escapeHtml(entry.specialNote)}</p>` : ""}
+      ${meaningfulSpecialNote(entry.specialNote) ? `<p class="special-note">${escapeHtml(meaningfulSpecialNote(entry.specialNote))}</p>` : ""}
     </article>
   `;
 }
@@ -1039,6 +1040,12 @@ function clean(value) {
 function meaningfulNote(value) {
   const note = clean(value);
   if (!note || note === "없음" || note === "X" || note === "-") return "";
+  return note;
+}
+
+function meaningfulSpecialNote(value) {
+  const note = meaningfulNote(value);
+  if (!note || note === "팀장" || note === "PM") return "";
   return note;
 }
 
