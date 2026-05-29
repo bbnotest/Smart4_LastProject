@@ -629,9 +629,10 @@ textarea:focus {
   bottom: 8px;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   min-width: 42px;
   max-width: calc(100% - var(--bar-left, 0%) - 8px);
-  padding: 0 8px;
+  padding: 0 5px;
   color: #ffffff;
   background: var(--accent);
   border-radius: 999px;
@@ -661,8 +662,9 @@ textarea:focus {
 
 .gantt-bar span {
   overflow: hidden;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 800;
+  line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
