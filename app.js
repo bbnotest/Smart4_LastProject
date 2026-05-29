@@ -94,6 +94,7 @@ const els = {
   adminTab: document.querySelector("#adminTab"),
   teamOverviewTab: document.querySelector("#teamOverviewTab"),
   teamDailyTab: document.querySelector("#teamDailyTab"),
+  teamIssueTab: document.querySelector("#teamIssueTab"),
   overviewTab: document.querySelector("#overviewTab"),
   historyTab: document.querySelector("#historyTab"),
   studentSearchInput: document.querySelector("#studentSearchInput"),
@@ -180,6 +181,7 @@ els.adminTab.addEventListener("click", () => {
 });
 els.teamOverviewTab.addEventListener("click", () => setTeamMode("overview"));
 els.teamDailyTab.addEventListener("click", () => setTeamMode("daily"));
+els.teamIssueTab.addEventListener("click", () => setTeamMode("issue"));
 els.overviewTab.addEventListener("click", () => setStudentMode("overview"));
 els.historyTab.addEventListener("click", () => setStudentMode("history"));
 els.studentSearchInput.addEventListener("input", () => {
@@ -201,6 +203,7 @@ function setTeamMode(mode) {
   state.teamMode = mode;
   els.teamOverviewTab.classList.toggle("is-active", mode === "overview");
   els.teamDailyTab.classList.toggle("is-active", mode === "daily");
+  els.teamIssueTab.classList.toggle("is-active", mode === "issue");
   render();
 }
 
@@ -470,6 +473,10 @@ function render() {
     els.teamTaskSummary.classList.remove("is-hidden");
     renderTeamOverview(teamOverviewEntries());
     els.teamList.innerHTML = "";
+  } else if (state.teamMode === "issue") {
+    els.teamTaskSummary.classList.remove("is-hidden");
+    renderIssueHistory();
+    els.teamList.innerHTML = "";
   } else {
     const entries = filteredEntries();
     const teamNotes = storedTeamNotesForEntries(entries);
@@ -656,6 +663,82 @@ function renderTeamOverview(entries) {
     </div>
   `;
   bindGanttPeriodControls();
+}
+
+function renderIssueHistory() {
+  const issues = issueHistoryItems();
+  els.teamTaskSummary.innerHTML = `
+    <div class="task-summary-head">
+      <h2>${escapeHtml(state.filters.team)} 이슈 히스토리</h2>
+      <span>${escapeHtml(`${issues.length}건`)}</span>
+    </div>
+    ${issues.length ? `
+      <div class="issue-history-list">
+        ${issues.map(renderIssueHistoryItem).join("")}
+      </div>
+    ` : `<div class="empty-state">등록된 이슈가 없습니다.</div>`}
+  `;
+}
+
+function issueHistoryItems() {
+  const selectedTeam = state.filters.team;
+  const stored = state.teamNotes
+    .filter((note) => note.team === selectedTeam)
+    .flatMap((note) => (note.items || []).map((item) => buildDelayContext(item, note)));
+
+  const storedKeys = new Set(stored.map((item) => item.key));
+  const computed = state.entries
+    .filter((entry) => entry.team === selectedTeam)
+    .flatMap((entry) => delayedTaskItems([entry]).map(({ task, previous }) => buildDelayContext({
+      team: entry.team,
+      date: entry.date,
+      part: entry.part,
+      student: entry.student,
+      taskTitle: task.title,
+      previousTaskTitle: previous.task.title,
+      previousDate: previous.entry.date,
+      previousDeadline: previous.task.deadline,
+      previousDeadlineText: previous.task.deadlineText,
+      currentDeadline: task.deadline,
+      currentDeadlineText: task.deadlineText,
+      note: ""
+    }, { team: entry.team, date: entry.date })))
+    .filter((item) => !storedKeys.has(item.key));
+
+  return [...stored, ...computed]
+    .map((context) => {
+      state.delayContexts.set(context.key, context);
+      const review = delayReviewForKey(context.key);
+      return {
+        ...context,
+        review,
+        decision: normalizeReviewDecision(review?.decision)
+      };
+    })
+    .sort((a, b) => b.date.localeCompare(a.date)
+      || a.part.localeCompare(b.part)
+      || a.student.localeCompare(b.student)
+      || a.currentTitle.localeCompare(b.currentTitle));
+}
+
+function renderIssueHistoryItem(item) {
+  const isRejected = item.decision === "rejected";
+  return `
+    <article class="issue-history-item ${isRejected ? "is-disabled" : ""}">
+      <div class="issue-history-main">
+        <div>
+          <div class="issue-history-meta">${escapeHtml(`${item.date} · ${item.part} · ${item.student}`)}</div>
+          <h3>${escapeHtml(item.currentTitle || item.note || "작업명 확인 필요")}</h3>
+        </div>
+        ${renderDelayReviewChip(item.key, item.decision)}
+      </div>
+      <div class="issue-compare-line">
+        <span>이전: ${escapeHtml(item.previousTitle || "확인 필요")} · ${escapeHtml(item.previousDeadlineLabel)}</span>
+        <span>현재: ${escapeHtml(item.currentDeadlineLabel)}</span>
+      </div>
+      ${item.review?.comment ? `<p class="issue-comment">${escapeHtml(item.review.comment)}</p>` : ""}
+    </article>
+  `;
 }
 
 function ganttRows(entries) {
@@ -904,7 +987,7 @@ function renderTeamSpecialNotes(notes) {
   return notes.map((note) => `
     <details class="daily-delay-summary">
       <summary>
-        <span>${escapeHtml(note.title || "특이사항")}</span>
+        <span>${escapeHtml(displayTeamNoteTitle(note.title))}</span>
         <small>${escapeHtml(`${note.items?.length || 0}건`)}</small>
       </summary>
       ${note.message ? `<p>${escapeHtml(note.message)}</p>` : ""}
@@ -967,7 +1050,7 @@ function renderDelayedTaskSummary(items) {
   return `
     <details class="daily-delay-summary">
       <summary>
-        <span>특이사항: 밀린 작업 추정</span>
+        <span>특이사항</span>
         <small>${escapeHtml(`${items.length}건`)}</small>
       </summary>
       ${renderDelayTable(items.map(({ entry, task, previous }) => ({
@@ -988,6 +1071,12 @@ function renderDelayedTaskSummary(items) {
   `;
 }
 
+function displayTeamNoteTitle(value) {
+  const title = clean(value);
+  if (!title || title.includes("밀린 작업 추정")) return "특이사항";
+  return title;
+}
+
 function renderDelayTable(items, note = {}) {
   return `
     <div class="delay-table-wrap">
@@ -999,6 +1088,7 @@ function renderDelayTable(items, note = {}) {
             <th>작업</th>
             <th>이전 마감</th>
             <th>현재 마감</th>
+            <th>판정</th>
           </tr>
         </thead>
         <tbody>
@@ -1012,7 +1102,7 @@ function renderDelayTable(items, note = {}) {
 function renderDelayTableRow(item, note = {}) {
   const context = buildDelayContext(item, note);
   const review = delayReviewForKey(context.key);
-  const decision = review?.decision || "unknown";
+  const decision = normalizeReviewDecision(review?.decision);
   const isRejected = decision === "rejected";
   state.delayContexts.set(context.key, context);
   return `
@@ -1022,17 +1112,23 @@ function renderDelayTableRow(item, note = {}) {
       <td>
         <div class="delay-task-cell">
           <span>${escapeHtml(context.currentTitle || context.note || "")}</span>
-          ${renderDelayReviewChip(context.key, decision)}
         </div>
       </td>
       <td>${escapeHtml(context.previousDeadlineLabel)}</td>
       <td>${escapeHtml(context.currentDeadlineLabel)}</td>
+      <td>${renderDelayReviewChip(context.key, decision)}</td>
     </tr>
+    ${review?.comment ? `
+      <tr class="delay-comment-row ${isRejected ? "is-disabled" : ""}">
+        <td></td>
+        <td colspan="5">${escapeHtml(review.comment)}</td>
+      </tr>
+    ` : ""}
   `;
 }
 
 function renderDelayReviewChip(key, decision) {
-  const label = decision === "confirmed" ? "(O)" : decision === "rejected" ? "(X)" : "(추정)";
+  const label = reviewLabel(decision);
   return `
     <button class="delay-review-chip ${decisionClass(decision)}" type="button" data-review-key="${escapeHtml(key)}" title="전/후 데이터를 비교하고 판정합니다">
       ${escapeHtml(label)}
@@ -1111,7 +1207,7 @@ function delayReviewForKey(key) {
 function decisionClass(decision) {
   if (decision === "confirmed") return "is-confirmed";
   if (decision === "rejected") return "is-rejected";
-  return "is-unknown";
+  return "is-pending";
 }
 
 function bindDelayReviewButtons() {
@@ -1161,12 +1257,19 @@ function openDelayReviewModal(key) {
         </div>
       ` : ""}
       <div class="review-current-state">
-        현재 판정: <strong>${escapeHtml(reviewLabel(review?.decision || "unknown"))}</strong>
+        현재 판정: <strong>${escapeHtml(reviewLabel(normalizeReviewDecision(review?.decision)))}</strong>
         ${review?.reviewedBy ? `<span>${escapeHtml(review.reviewedBy)}</span>` : ""}
       </div>
+      <label class="review-comment-field">
+        코멘트
+        <textarea id="reviewCommentInput" placeholder="확인 내용이나 보류 사유를 입력하세요.">${escapeHtml(review?.comment || "")}</textarea>
+      </label>
       <div class="review-modal-actions">
-        <button class="primary-button" type="button" data-review-decision="confirmed">정말 밀린 작업 (O)</button>
-        <button class="ghost-button" type="button" data-review-decision="rejected">추정 아님 (X)</button>
+        <button class="ghost-button" type="button" data-review-save-comment="true">코멘트 저장</button>
+        <button class="primary-button" type="button" data-review-decision="confirmed">확인</button>
+        <button class="ghost-button" type="button" data-review-decision="pending">보류</button>
+        <button class="ghost-button" type="button" data-review-decision="rejected">제외</button>
+        <button class="ghost-button danger-button" type="button" data-review-delete-comment="true" ${review?.comment ? "" : "disabled"}>코멘트 삭제</button>
       </div>
     </section>
   `;
@@ -1178,7 +1281,8 @@ function openDelayReviewModal(key) {
   modal.querySelectorAll("[data-review-decision]").forEach((button) => {
     button.addEventListener("click", async () => {
       try {
-        await saveDelayReview(context, button.dataset.reviewDecision);
+        const comment = clean(modal.querySelector("#reviewCommentInput")?.value);
+        await saveDelayReview(context, button.dataset.reviewDecision, comment);
         closeDelayReviewModal();
         render();
       } catch (error) {
@@ -1190,6 +1294,35 @@ function openDelayReviewModal(key) {
         throw error;
       }
     });
+  });
+  modal.querySelector("[data-review-save-comment]")?.addEventListener("click", async () => {
+    try {
+      const comment = clean(modal.querySelector("#reviewCommentInput")?.value);
+      await saveDelayReview(context, normalizeReviewDecision(review?.decision), comment);
+      closeDelayReviewModal();
+      render();
+    } catch (error) {
+      if (error?.code === "permission-denied") {
+        els.permissionNotice.textContent = "scrumDelayReviews 저장 권한이 없습니다. Firebase 보안 규칙에 scrumDelayReviews 권한을 추가하세요.";
+        els.permissionNotice.classList.remove("is-hidden");
+        return;
+      }
+      throw error;
+    }
+  });
+  modal.querySelector("[data-review-delete-comment]")?.addEventListener("click", async () => {
+    try {
+      await saveDelayReview(context, normalizeReviewDecision(review?.decision), "");
+      closeDelayReviewModal();
+      render();
+    } catch (error) {
+      if (error?.code === "permission-denied") {
+        els.permissionNotice.textContent = "scrumDelayReviews 저장 권한이 없습니다. Firebase 보안 규칙에 scrumDelayReviews 권한을 추가하세요.";
+        els.permissionNotice.classList.remove("is-hidden");
+        return;
+      }
+      throw error;
+    }
   });
 }
 
@@ -1209,12 +1342,19 @@ function closeDelayReviewModal() {
 }
 
 function reviewLabel(decision) {
-  if (decision === "confirmed") return "(O)";
-  if (decision === "rejected") return "(X)";
-  return "(추정)";
+  const normalized = normalizeReviewDecision(decision);
+  if (normalized === "confirmed") return "확인";
+  if (normalized === "rejected") return "제외";
+  return "보류";
 }
 
-async function saveDelayReview(context, decision) {
+function normalizeReviewDecision(decision) {
+  if (decision === "confirmed") return "confirmed";
+  if (decision === "rejected") return "rejected";
+  return "pending";
+}
+
+async function saveDelayReview(context, decision, comment = "") {
   const review = {
     key: context.key,
     team: context.team,
@@ -1225,7 +1365,8 @@ async function saveDelayReview(context, decision) {
     previousTaskTitle: context.previousTitle,
     previousDeadlineText: context.previousDeadlineText,
     currentDeadlineText: context.currentDeadlineText,
-    decision,
+    decision: normalizeReviewDecision(decision),
+    comment: clean(comment),
     reviewedBy: state.user?.email || "preview",
     reviewedAt: new Date().toISOString()
   };

@@ -793,21 +793,24 @@ textarea:focus {
   opacity: 0.68;
 }
 
+.delay-comment-row td {
+  color: var(--muted);
+  background: rgba(37, 99, 235, 0.05);
+  font-size: 12px;
+}
+
 .delay-task-cell {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  justify-content: space-between;
+  display: block;
 }
 
 .delay-review-chip {
-  flex: 0 0 auto;
   min-height: 24px;
-  padding: 0 8px;
+  min-width: 46px;
+  padding: 0 9px;
   color: var(--accent-strong);
   background: var(--panel-soft);
   border: 1px solid rgba(37, 99, 235, 0.28);
-  border-radius: 999px;
+  border-radius: 6px;
   font-size: 11px;
   font-weight: 900;
 }
@@ -822,6 +825,12 @@ textarea:focus {
   color: var(--muted);
   background: rgba(100, 116, 139, 0.1);
   border-color: var(--line);
+}
+
+.delay-review-chip.is-pending {
+  color: #92400e;
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.32);
 }
 
 .review-modal {
@@ -943,6 +952,74 @@ textarea:focus {
 .review-modal-actions {
   justify-content: flex-end;
   flex-wrap: wrap;
+}
+
+.review-comment-field {
+  margin: 12px 0 14px;
+}
+
+.review-comment-field textarea {
+  min-height: 76px;
+}
+
+.danger-button {
+  color: var(--danger);
+}
+
+.danger-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.issue-history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.issue-history-item {
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.issue-history-item.is-disabled {
+  color: var(--muted);
+  background: rgba(100, 116, 139, 0.08);
+}
+
+.issue-history-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.issue-history-main h3 {
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.issue-history-meta,
+.issue-compare-line,
+.issue-comment {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.issue-compare-line {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.issue-comment {
+  margin: 10px 0 0;
+  padding: 9px 10px;
+  background: var(--panel-soft);
+  border-radius: 6px;
 }
 
 .team-column {
