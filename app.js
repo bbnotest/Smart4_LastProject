@@ -1071,7 +1071,7 @@ function consolidateGanttRows(rows) {
       previous.task = row.task;
       if (row.hasDeadline && previousEnd < row.end && delayedStart <= row.end) {
         previous.delaySegments.push({
-          start: delayedStart,
+          start: delayedStart > row.start ? delayedStart : row.start,
           end: row.end
         });
       }
@@ -1171,9 +1171,9 @@ function renderGanttPeriodControls() {
         `).join("")}
       </div>
       <div class="gantt-legend" aria-label="간트 색상 안내">
-        <span><i class="legend-dot is-active"></i>파란색 : 작업중</span>
-        <span><i class="legend-dot is-delayed"></i>분홍색 : 작업지연</span>
-        <span><i class="legend-dot is-completed"></i>초록색 : 작업완료</span>
+        <span><i class="legend-dot is-active"></i>작업중</span>
+        <span><i class="legend-dot is-delayed"></i>지연</span>
+        <span><i class="legend-dot is-completed"></i>작업완료</span>
       </div>
     </div>
   `;
@@ -1279,8 +1279,10 @@ function ganttDelaySegmentsForTask(entry, task) {
       const currentDeadline = deadlineToDate(item.currentDeadline || task.deadline);
       if (Number.isNaN(previousDeadline.getTime()) || Number.isNaN(currentDeadline.getTime())) return null;
       if (previousDeadline >= currentDeadline) return null;
+      const reportDate = dateFromKey(entry.date);
+      const delayedStart = addDays(previousDeadline, 1);
       return {
-        start: addDays(previousDeadline, 1),
+        start: delayedStart > reportDate ? delayedStart : reportDate,
         end: currentDeadline
       };
     })
