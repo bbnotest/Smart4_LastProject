@@ -95,6 +95,7 @@ const els = {
   configNotice: document.querySelector("#configNotice"),
   permissionNotice: document.querySelector("#permissionNotice"),
   todayNotice: document.querySelector("#todayNotice"),
+  missingRosterNotice: document.querySelector("#missingRosterNotice"),
   teamTab: document.querySelector("#teamTab"),
   studentTab: document.querySelector("#studentTab"),
   adminTab: document.querySelector("#adminTab"),
@@ -474,6 +475,7 @@ function render() {
   syncFilterOptions();
   const entries = filteredEntries();
   renderTodayNotice();
+  renderMissingRosterNotice();
   els.dateStrip.classList.toggle("is-hidden", state.teamMode !== "daily");
   if (state.teamMode === "overview") {
     els.teamTaskSummary.classList.remove("is-hidden");
@@ -515,6 +517,38 @@ function renderTodayNotice() {
   }
 
   els.todayNotice.classList.add("is-hidden");
+}
+
+function renderMissingRosterNotice() {
+  if (!els.missingRosterNotice || state.view !== "team" || state.filters.date === "all") {
+    els.missingRosterNotice?.classList.add("is-hidden");
+    return;
+  }
+
+  const team = state.filters.team;
+  const roster = teamRoster[team];
+  if (!roster) {
+    els.missingRosterNotice.classList.add("is-hidden");
+    return;
+  }
+
+  const reported = new Set(state.entries
+    .filter((entry) => entry.team === team && entry.date === state.filters.date)
+    .map((entry) => entry.student));
+  const missingByPart = Object.entries(roster)
+    .map(([part, students]) => {
+      const missing = students.filter((student) => !reported.has(student));
+      return missing.length ? `${part}: ${missing.join(", ")}` : "";
+    })
+    .filter(Boolean);
+
+  if (!missingByPart.length) {
+    els.missingRosterNotice.classList.add("is-hidden");
+    return;
+  }
+
+  els.missingRosterNotice.textContent = `${state.filters.date} ${team} 데이터 누락 인원: ${missingByPart.join(" / ")}`;
+  els.missingRosterNotice.classList.remove("is-hidden");
 }
 
 function syncFilterOptions() {
