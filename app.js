@@ -1030,8 +1030,7 @@ function ganttRows(entries) {
         date: entry.date,
         role: getRole(entry),
         hasDeadline,
-        isDueToday,
-        delaySegments: ganttDelaySegmentsForTask(entry, task)
+        isDueToday
       };
     }))
     .sort((a, b) => {
@@ -1061,27 +1060,18 @@ function consolidateGanttRows(rows) {
     const key = ganttMergeKey(row);
     const previous = [...merged].reverse().find((item) => item.mergeKey === key);
     if (previous && shouldMergeGanttRows(previous, row)) {
-      const previousEnd = new Date(previous.end);
-      const delayedStart = addDays(previousEnd, 1);
       previous.start = previous.start < row.start ? previous.start : row.start;
       previous.end = previous.end > row.end ? previous.end : row.end;
       previous.hasDeadline = previous.hasDeadline || row.hasDeadline;
       previous.isDueToday = previous.isDueToday || row.isDueToday;
       previous.date = previous.date < row.date ? previous.date : row.date;
       previous.task = row.task;
-      if (row.hasDeadline && previousEnd < row.end && delayedStart <= row.end) {
-        previous.delaySegments.push({
-          start: row.start,
-          end: row.end
-        });
-      }
       return;
     }
 
     merged.push({
       ...row,
-      mergeKey: key,
-      delaySegments: [...(row.delaySegments || [])]
+      mergeKey: key
     });
   });
 
@@ -1172,7 +1162,6 @@ function renderGanttPeriodControls() {
       </div>
       <div class="gantt-legend" aria-label="간트 색상 안내">
         <span><i class="legend-dot is-active"></i>작업중</span>
-        <span><i class="legend-dot is-delayed"></i>지연</span>
         <span><i class="legend-dot is-completed"></i>작업완료</span>
       </div>
     </div>
@@ -1228,7 +1217,6 @@ function renderGanttRow(row, range, ticks) {
       <div class="gantt-timeline" style="${timelineStyle}">
         ${renderGanttDayLayer(ticks)}
         <div class="gantt-bar ${barClass}" style="${row.hasDeadline ? `--bar-left:${left.toFixed(2)}%;--bar-width:${width.toFixed(2)}%;` : ""}"></div>
-        ${renderGanttDelaySegments(row, range, days)}
         ${row.hasDeadline ? `
           <span class="gantt-bar-label ${completed ? "is-completed" : ""}" style="--bar-left:${left.toFixed(2)}%;--bar-width:${width.toFixed(2)}%;">
             ${escapeHtml(formatDeadline(row.task.deadline, row.task.deadlineText))}
@@ -1246,49 +1234,6 @@ function isGanttCompleted(row) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return row.end < today;
-}
-
-function renderGanttDelaySegments(row, range, days) {
-  if (!row.hasDeadline || !row.delaySegments?.length) return "";
-  return row.delaySegments
-    .filter((segment) => segment.start <= range.max && segment.end >= range.min)
-    .map((segment) => {
-      const visibleStart = segment.start < range.min ? range.min : segment.start;
-      const visibleEnd = segment.end > range.max ? range.max : segment.end;
-      const startIndex = Math.max(0, Math.min(days - 1, daysBetween(range.min, visibleStart)));
-      const endIndex = Math.max(startIndex, Math.min(days - 1, daysBetween(range.min, visibleEnd)));
-      const left = (startIndex / days) * 100;
-      const width = ((endIndex - startIndex + 1) / days) * 100;
-      return `<div class="gantt-delay-segment" style="--bar-left:${left.toFixed(2)}%;--bar-width:${width.toFixed(2)}%;"></div>`;
-    })
-    .join("");
-}
-
-function ganttDelaySegmentsForTask(entry, task) {
-  return state.teamNotes
-    .filter((note) => note.team === entry.team && note.date === entry.date)
-    .flatMap((note) => note.items || [])
-    .filter((item) => {
-      return item.part === entry.part
-        && item.student === entry.student
-        && taskTitlesMatch(item.taskTitle, task.title)
-        && !isRejectedDelayItem(item, { team: entry.team, date: entry.date });
-    })
-    .map((item) => {
-      const previousDeadline = deadlineToDate(item.previousDeadline);
-      const currentDeadline = deadlineToDate(item.currentDeadline || task.deadline);
-      if (Number.isNaN(previousDeadline.getTime()) || Number.isNaN(currentDeadline.getTime())) return null;
-      if (previousDeadline >= currentDeadline) return null;
-      const delayedStart = addDays(previousDeadline, 1);
-      const reportDate = dateFromKey(entry.date);
-      const start = delayedStart > reportDate ? delayedStart : reportDate;
-      if (start > currentDeadline) return null;
-      return {
-        start,
-        end: currentDeadline
-      };
-    })
-    .filter(Boolean);
 }
 
 function taskTitlesMatch(a, b) {
