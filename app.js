@@ -870,9 +870,11 @@ function renderIssueHistoryControls(issues, rejectedCount = 0) {
           <option value="decision" ${state.issueFilters.sort === "decision" ? "selected" : ""}>상태순</option>
         </select>
       </label>
-      <button id="showRejectedIssuesButton" class="ghost-button" type="button" ${rejectedCount ? "" : "disabled"}>
-        제외한 이슈 확인하기 ${escapeHtml(String(rejectedCount))}
-      </button>
+      ${isGuest() ? "" : `
+        <button id="showRejectedIssuesButton" class="ghost-button" type="button" ${rejectedCount ? "" : "disabled"}>
+          제외한 이슈 확인하기 ${escapeHtml(String(rejectedCount))}
+        </button>
+      `}
     </div>
   `;
 }
@@ -1028,7 +1030,8 @@ function ganttRows(entries) {
         date: entry.date,
         role: getRole(entry),
         hasDeadline,
-        isDueToday
+        isDueToday,
+        delaySegments: ganttDelaySegmentsForTask(entry, task)
       };
     }))
     .sort((a, b) => {
@@ -1078,7 +1081,7 @@ function consolidateGanttRows(rows) {
     merged.push({
       ...row,
       mergeKey: key,
-      delaySegments: []
+      delaySegments: [...(row.delaySegments || [])]
     });
   });
 
@@ -1206,10 +1209,15 @@ function renderGanttRow(row, range, ticks) {
       <span class="gantt-sticky-cell gantt-task-cell" title="${escapeHtml(row.task.title)}">${escapeHtml(row.task.title)}</span>
       <div class="gantt-timeline" style="${timelineStyle}">
         ${renderGanttDayLayer(ticks)}
-        <div class="gantt-bar ${row.part === "플밍" ? "is-dev" : ""} ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}" style="${row.hasDeadline ? `--bar-left:${left.toFixed(2)}%;--bar-width:${width.toFixed(2)}%;` : ""}">
-          <span>${escapeHtml(formatDeadline(row.task.deadline, row.task.deadlineText))}</span>
-        </div>
+        <div class="gantt-bar ${row.part === "플밍" ? "is-dev" : ""} ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}" style="${row.hasDeadline ? `--bar-left:${left.toFixed(2)}%;--bar-width:${width.toFixed(2)}%;` : ""}"></div>
         ${renderGanttDelaySegments(row, range, days)}
+        ${row.hasDeadline ? `
+          <span class="gantt-bar-label" style="--bar-left:${left.toFixed(2)}%;--bar-width:${width.toFixed(2)}%;">
+            ${escapeHtml(formatDeadline(row.task.deadline, row.task.deadlineText))}
+          </span>
+        ` : `
+          <span class="gantt-bar gantt-bar-label is-unscheduled">미정</span>
+        `}
       </div>
     </div>
   `;
@@ -1229,6 +1237,35 @@ function renderGanttDelaySegments(row, range, days) {
       return `<div class="gantt-delay-segment" style="--bar-left:${left.toFixed(2)}%;--bar-width:${width.toFixed(2)}%;"></div>`;
     })
     .join("");
+}
+
+function ganttDelaySegmentsForTask(entry, task) {
+  return state.teamNotes
+    .filter((note) => note.team === entry.team && note.date === entry.date)
+    .flatMap((note) => note.items || [])
+    .filter((item) => {
+      return item.part === entry.part
+        && item.student === entry.student
+        && taskTitlesMatch(item.taskTitle, task.title)
+        && !isRejectedDelayItem(item, { team: entry.team, date: entry.date });
+    })
+    .map((item) => {
+      const previousDeadline = deadlineToDate(item.previousDeadline);
+      const currentDeadline = deadlineToDate(item.currentDeadline || task.deadline);
+      if (Number.isNaN(previousDeadline.getTime()) || Number.isNaN(currentDeadline.getTime())) return null;
+      if (previousDeadline >= currentDeadline) return null;
+      return {
+        start: addDays(previousDeadline, 1),
+        end: currentDeadline
+      };
+    })
+    .filter(Boolean);
+}
+
+function taskTitlesMatch(a, b) {
+  const left = normalizedTaskTitle(a);
+  const right = normalizedTaskTitle(b);
+  return Boolean(left && right && (left === right || left.includes(right) || right.includes(left)));
 }
 
 function renderGanttMonthCells(ticks) {
@@ -1444,6 +1481,9 @@ function renderDelayTableRow(item, note = {}) {
 
 function renderDelayReviewChip(key, decision) {
   const label = reviewLabel(decision);
+  if (isGuest()) {
+    return `<span class="delay-review-chip ${decisionClass(decision)}">${escapeHtml(label)}</span>`;
+  }
   return `
     <button class="delay-review-chip ${decisionClass(decision)}" type="button" data-review-key="${escapeHtml(key)}" title="전/후 데이터를 비교하고 판정합니다">
       ${escapeHtml(label)}
@@ -1603,10 +1643,17 @@ function openDelayReviewModal(key) {
         현재 판정: <strong>${escapeHtml(reviewLabel(normalizeReviewDecision(review?.decision)))}</strong>
         ${review?.reviewedBy ? `<span>${escapeHtml(review.reviewedBy)}</span>` : ""}
       </div>
-      <label class="review-comment-field">
-        코멘트
-        <textarea id="reviewCommentInput" placeholder="확인 내용이나 보류 사유를 입력하세요." ${readOnly ? "readonly" : ""}>${escapeHtml(review?.comment || "")}</textarea>
-      </label>
+      ${readOnly ? `
+        <div class="review-comment-readonly">
+          <strong>코멘트</strong>
+          <p>${escapeHtml(review?.comment || "등록된 코멘트가 없습니다.")}</p>
+        </div>
+      ` : `
+        <label class="review-comment-field">
+          코멘트
+          <textarea id="reviewCommentInput" placeholder="확인 내용이나 보류 사유를 입력하세요.">${escapeHtml(review?.comment || "")}</textarea>
+        </label>
+      `}
       <div class="review-modal-actions">
         ${readOnly ? `
           <span class="readonly-note">게스트 계정은 보기만 가능합니다.</span>

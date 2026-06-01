@@ -712,6 +712,38 @@ textarea:focus {
   pointer-events: none;
 }
 
+.gantt-bar-label {
+  position: absolute;
+  z-index: 4;
+  left: var(--bar-left, 0);
+  width: var(--bar-width, 4%);
+  top: 8px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 42px;
+  max-width: calc(100% - var(--bar-left, 0%) - 8px);
+  padding: 0 5px;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.gantt-bar-label.is-unscheduled {
+  left: 8px;
+  width: auto;
+  min-width: 56px;
+  max-width: calc(100% - 16px);
+  color: var(--muted);
+  justify-content: flex-end;
+}
+
 .gantt-bar span {
   position: relative;
   z-index: 3;
@@ -985,6 +1017,27 @@ textarea:focus {
 
 .review-comment-field textarea {
   min-height: 76px;
+}
+
+.review-comment-readonly {
+  margin: 12px 0 14px;
+  padding: 12px;
+  color: var(--muted);
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.review-comment-readonly strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text);
+}
+
+.review-comment-readonly p {
+  margin: 0;
+  line-height: 1.5;
 }
 
 .danger-button {
