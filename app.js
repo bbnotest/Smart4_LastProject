@@ -2,6 +2,7 @@ const config = window.firebaseConfig || {};
 const firebaseReady = Boolean(config.apiKey && config.projectId && config.authDomain);
 const emailDomain = "@smart.com";
 const adminEmails = ["안중재@smart.com"];
+const guestEmails = ["기획자@smart.com"];
 const monitoredTeams = ["1팀", "2팀", "3팀", "4팀", "5팀", "6팀", "7팀", "8팀"];
 const ganttPeriods = [
   { key: "all", label: "전체", start: "2026-05-28", end: "2026-07-15" },
@@ -256,7 +257,7 @@ function syncAdminAccess() {
   const allowed = isAdmin();
   els.adminTab.classList.toggle("is-hidden", !allowed);
   if (els.adminStatus) {
-    els.adminStatus.textContent = `현재 계정: ${state.user?.email || "없음"} · 관리자 권한: ${allowed ? "확인됨" : "없음"}`;
+    els.adminStatus.textContent = `현재 계정: ${state.user?.email || "없음"} · 관리자 권한: ${allowed ? "확인됨" : "없음"}${isGuest() ? " · 게스트 읽기 전용" : ""}`;
   }
   if (!allowed && state.view === "admin") {
     setView("team");
@@ -712,14 +713,16 @@ function renderTeamOverview(entries) {
 
 function renderIssueHistory() {
   const allIssues = issueHistoryItems();
-  syncIssueFilters(allIssues);
-  const issues = filteredIssueHistoryItems(allIssues);
+  const visibleIssues = allIssues.filter((item) => item.decision !== "rejected");
+  const rejectedIssues = allIssues.filter((item) => item.decision === "rejected");
+  syncIssueFilters(visibleIssues);
+  const issues = filteredIssueHistoryItems(visibleIssues);
   els.teamTaskSummary.innerHTML = `
     <div class="task-summary-head">
       <h2>${escapeHtml(state.filters.team)} 이슈 히스토리</h2>
-      <span>${escapeHtml(`${issues.length}/${allIssues.length}건`)}</span>
+      <span>${escapeHtml(`${issues.length}/${visibleIssues.length}건`)}</span>
     </div>
-    ${renderIssueHistoryControls(allIssues)}
+    ${renderIssueHistoryControls(visibleIssues, rejectedIssues.length)}
     ${issues.length ? `
       ${renderIssueHistoryTable(issues)}
     ` : `<div class="empty-state">등록된 이슈가 없습니다.</div>`}
@@ -832,7 +835,7 @@ function sortIssueHistoryItems(issues) {
   });
 }
 
-function renderIssueHistoryControls(issues) {
+function renderIssueHistoryControls(issues, rejectedCount = 0) {
   const dates = unique(issues.map((item) => item.date)).sort().reverse();
   const students = unique(issues.map((item) => item.student));
   return `
@@ -855,7 +858,7 @@ function renderIssueHistoryControls(issues) {
         상태
         <select data-issue-filter="decision">
           <option value="all">전체</option>
-          ${["pending", "confirmed", "rejected"].map((decision) => `<option value="${decision}" ${state.issueFilters.decision === decision ? "selected" : ""}>${escapeHtml(reviewLabel(decision))}</option>`).join("")}
+          ${["pending", "confirmed"].map((decision) => `<option value="${decision}" ${state.issueFilters.decision === decision ? "selected" : ""}>${escapeHtml(reviewLabel(decision))}</option>`).join("")}
         </select>
       </label>
       <label>
@@ -867,6 +870,9 @@ function renderIssueHistoryControls(issues) {
           <option value="decision" ${state.issueFilters.sort === "decision" ? "selected" : ""}>상태순</option>
         </select>
       </label>
+      <button id="showRejectedIssuesButton" class="ghost-button" type="button" ${rejectedCount ? "" : "disabled"}>
+        제외한 이슈 확인하기 ${escapeHtml(String(rejectedCount))}
+      </button>
     </div>
   `;
 }
@@ -920,6 +926,73 @@ function bindIssueHistoryControls() {
       state.issueFilters[key] = select.value;
       renderIssueHistory();
       bindDelayReviewButtons();
+    });
+  });
+  document.querySelector("#showRejectedIssuesButton")?.addEventListener("click", () => {
+    openRejectedIssuesModal(issueHistoryItems().filter((item) => item.decision === "rejected"));
+  });
+}
+
+function openRejectedIssuesModal(items) {
+  const modal = ensureDelayReviewModal();
+  modal.innerHTML = `
+    <div class="review-modal-backdrop" data-review-close="true"></div>
+    <section class="review-modal-panel" role="dialog" aria-modal="true" aria-label="제외한 이슈 확인">
+      <div class="review-modal-head">
+        <div>
+          <p class="eyebrow">${escapeHtml(state.filters.team)} · 제외 이슈</p>
+          <h2>제외한 이슈 확인</h2>
+        </div>
+        <button class="icon-button" type="button" data-review-close="true" aria-label="닫기">×</button>
+      </div>
+      ${items.length ? `
+        <div class="issue-history-table-wrap">
+          <table class="issue-history-table">
+            <thead>
+              <tr>
+                <th>보고일</th>
+                <th>작업인원</th>
+                <th>작업</th>
+                <th>이전 마감</th>
+                <th>현재 마감</th>
+                <th>상태</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items.map((item) => `
+                <tr data-rejected-issue-key="${escapeHtml(item.key)}" tabindex="0">
+                  <td>${escapeHtml(formatDateKeyShort(item.date))}</td>
+                  <td>
+                    <strong>${escapeHtml(item.student)}</strong>
+                    <small>${escapeHtml(item.part)}</small>
+                  </td>
+                  <td>
+                    <span>${escapeHtml(item.currentTitle || item.note || "작업명 확인 필요")}</span>
+                    ${item.review?.comment ? `<small class="issue-comment-inline">${escapeHtml(item.review.comment)}</small>` : ""}
+                  </td>
+                  <td>${escapeHtml(item.previousDeadlineLabel)}</td>
+                  <td>${escapeHtml(item.currentDeadlineLabel)}</td>
+                  <td><span class="delay-review-chip ${decisionClass(item.decision)}">${escapeHtml(reviewLabel(item.decision))}</span></td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : `<div class="empty-state">제외한 이슈가 없습니다.</div>`}
+    </section>
+  `;
+  modal.classList.remove("is-hidden");
+  modal.querySelectorAll("[data-review-close]").forEach((button) => {
+    button.addEventListener("click", closeDelayReviewModal);
+  });
+  modal.querySelectorAll("[data-rejected-issue-key]").forEach((row) => {
+    const open = () => openDelayReviewModal(row.dataset.rejectedIssueKey || "");
+    row.addEventListener("click", open);
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        open();
+      }
     });
   });
 }
@@ -984,18 +1057,28 @@ function consolidateGanttRows(rows) {
   sorted.forEach((row) => {
     const key = ganttMergeKey(row);
     const previous = [...merged].reverse().find((item) => item.mergeKey === key);
-    if (previous && previous.hasDeadline && previous.end >= row.start) {
+    if (previous && shouldMergeGanttRows(previous, row)) {
+      const previousEnd = new Date(previous.end);
+      const delayedStart = addDays(previousEnd, 1);
       previous.start = previous.start < row.start ? previous.start : row.start;
       previous.end = previous.end > row.end ? previous.end : row.end;
       previous.hasDeadline = previous.hasDeadline || row.hasDeadline;
       previous.isDueToday = previous.isDueToday || row.isDueToday;
       previous.date = previous.date < row.date ? previous.date : row.date;
+      previous.task = row.task;
+      if (row.hasDeadline && previousEnd < row.end && delayedStart <= row.end) {
+        previous.delaySegments.push({
+          start: delayedStart,
+          end: row.end
+        });
+      }
       return;
     }
 
     merged.push({
       ...row,
-      mergeKey: key
+      mergeKey: key,
+      delaySegments: []
     });
   });
 
@@ -1016,6 +1099,12 @@ function compareGanttRows(a, b) {
 
 function ganttMergeKey(row) {
   return `${row.team}|${row.part}|${row.student}|${normalizedTaskTitle(row.task.title)}`;
+}
+
+function shouldMergeGanttRows(previous, row) {
+  if (previous.mergeKey !== ganttMergeKey(row)) return false;
+  if (!previous.hasDeadline || !row.hasDeadline) return false;
+  return true;
 }
 
 function ganttRange() {
@@ -1120,9 +1209,26 @@ function renderGanttRow(row, range, ticks) {
         <div class="gantt-bar ${row.part === "플밍" ? "is-dev" : ""} ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}" style="${row.hasDeadline ? `--bar-left:${left.toFixed(2)}%;--bar-width:${width.toFixed(2)}%;` : ""}">
           <span>${escapeHtml(formatDeadline(row.task.deadline, row.task.deadlineText))}</span>
         </div>
+        ${renderGanttDelaySegments(row, range, days)}
       </div>
     </div>
   `;
+}
+
+function renderGanttDelaySegments(row, range, days) {
+  if (!row.hasDeadline || !row.delaySegments?.length) return "";
+  return row.delaySegments
+    .filter((segment) => segment.start <= range.max && segment.end >= range.min)
+    .map((segment) => {
+      const visibleStart = segment.start < range.min ? range.min : segment.start;
+      const visibleEnd = segment.end > range.max ? range.max : segment.end;
+      const startIndex = Math.max(0, Math.min(days - 1, daysBetween(range.min, visibleStart)));
+      const endIndex = Math.max(startIndex, Math.min(days - 1, daysBetween(range.min, visibleEnd)));
+      const left = (startIndex / days) * 100;
+      const width = ((endIndex - startIndex + 1) / days) * 100;
+      return `<div class="gantt-delay-segment" style="--bar-left:${left.toFixed(2)}%;--bar-width:${width.toFixed(2)}%;"></div>`;
+    })
+    .join("");
 }
 
 function renderGanttMonthCells(ticks) {
@@ -1180,16 +1286,21 @@ function storedTeamNotesForEntries(entries) {
 
 function renderTeamSpecialNotes(notes) {
   if (!notes.length) return "";
-  return notes.map((note) => `
-    <details class="daily-delay-summary">
-      <summary>
-        <span>${escapeHtml(displayTeamNoteTitle(note.title))}</span>
-        <small>${escapeHtml(`${note.items?.length || 0}건`)}</small>
-      </summary>
-      ${note.message ? `<p>${escapeHtml(note.message)}</p>` : ""}
-      ${note.items?.length ? renderDelayTable(note.items, note) : ""}
-    </details>
-  `).join("");
+  return notes.map((note) => {
+    const visibleItems = (note.items || []).filter((item) => !isRejectedDelayItem(item, note));
+    if ((note.items || []).length && !visibleItems.length) return "";
+    if (!visibleItems.length && !note.message) return "";
+    return `
+      <details class="daily-delay-summary">
+        <summary>
+          <span>${escapeHtml(displayTeamNoteTitle(note.title))}</span>
+          <small>${escapeHtml(`${visibleItems.length}건`)}</small>
+        </summary>
+        ${note.message ? `<p>${escapeHtml(note.message)}</p>` : ""}
+        ${visibleItems.length ? renderDelayTable(visibleItems, note) : ""}
+      </details>
+    `;
+  }).join("");
 }
 
 function delayedTaskItems(entries) {
@@ -1242,29 +1353,37 @@ function findPreviousSameTask(entry, task) {
 }
 
 function renderDelayedTaskSummary(items) {
-  if (!items.length) return "";
+  const delayItems = items
+    .map(({ entry, task, previous }) => ({
+      team: entry.team,
+      date: entry.date,
+      part: entry.part,
+      student: entry.student,
+      taskTitle: task.title,
+      previousTaskTitle: previous.task.title,
+      previousDate: previous.entry.date,
+      previousDeadline: previous.task.deadline,
+      previousDeadlineText: previous.task.deadlineText,
+      currentDeadline: task.deadline,
+      currentDeadlineText: task.deadlineText,
+      note: ""
+    }))
+    .filter((item) => !isRejectedDelayItem(item, { team: item.team, date: item.date }));
+  if (!delayItems.length) return "";
   return `
     <details class="daily-delay-summary">
       <summary>
         <span>특이사항</span>
-        <small>${escapeHtml(`${items.length}건`)}</small>
+        <small>${escapeHtml(`${delayItems.length}건`)}</small>
       </summary>
-      ${renderDelayTable(items.map(({ entry, task, previous }) => ({
-        team: entry.team,
-        date: entry.date,
-        part: entry.part,
-        student: entry.student,
-        taskTitle: task.title,
-        previousTaskTitle: previous.task.title,
-        previousDate: previous.entry.date,
-        previousDeadline: previous.task.deadline,
-        previousDeadlineText: previous.task.deadlineText,
-        currentDeadline: task.deadline,
-        currentDeadlineText: task.deadlineText,
-        note: ""
-      })))}
+      ${renderDelayTable(delayItems)}
     </details>
   `;
+}
+
+function isRejectedDelayItem(item, note = {}) {
+  const context = buildDelayContext(item, note);
+  return normalizeReviewDecision(delayReviewForKey(context.key)?.decision) === "rejected";
 }
 
 function displayTeamNoteTitle(value) {
@@ -1443,6 +1562,7 @@ function openDelayReviewModal(key) {
   const context = state.delayContexts.get(key);
   if (!context) return;
   const review = delayReviewForKey(key);
+  const readOnly = isGuest();
   const modal = ensureDelayReviewModal();
   modal.innerHTML = `
     <div class="review-modal-backdrop" data-review-close="true"></div>
@@ -1485,14 +1605,18 @@ function openDelayReviewModal(key) {
       </div>
       <label class="review-comment-field">
         코멘트
-        <textarea id="reviewCommentInput" placeholder="확인 내용이나 보류 사유를 입력하세요.">${escapeHtml(review?.comment || "")}</textarea>
+        <textarea id="reviewCommentInput" placeholder="확인 내용이나 보류 사유를 입력하세요." ${readOnly ? "readonly" : ""}>${escapeHtml(review?.comment || "")}</textarea>
       </label>
       <div class="review-modal-actions">
-        <button class="ghost-button" type="button" data-review-save-comment="true">코멘트 저장</button>
-        <button class="primary-button" type="button" data-review-decision="confirmed">확인</button>
-        <button class="ghost-button" type="button" data-review-decision="pending">보류</button>
-        <button class="ghost-button" type="button" data-review-decision="rejected">제외</button>
-        <button class="ghost-button danger-button" type="button" data-review-delete-comment="true" ${review?.comment ? "" : "disabled"}>코멘트 삭제</button>
+        ${readOnly ? `
+          <span class="readonly-note">게스트 계정은 보기만 가능합니다.</span>
+        ` : `
+          <button class="ghost-button" type="button" data-review-save-comment="true">코멘트 저장</button>
+          <button class="primary-button" type="button" data-review-decision="confirmed">확인</button>
+          <button class="ghost-button" type="button" data-review-decision="pending">보류</button>
+          <button class="ghost-button" type="button" data-review-decision="rejected">제외</button>
+          <button class="ghost-button danger-button" type="button" data-review-delete-comment="true" ${review?.comment ? "" : "disabled"}>코멘트 삭제</button>
+        `}
       </div>
     </section>
   `;
@@ -1578,6 +1702,10 @@ function normalizeReviewDecision(decision) {
 }
 
 async function saveDelayReview(context, decision, comment = "") {
+  if (isGuest()) {
+    throw new Error("guest-read-only");
+  }
+
   const review = {
     key: context.key,
     team: context.team,
@@ -2082,6 +2210,12 @@ function sameDate(a, b) {
     && a.getDate() === b.getDate();
 }
 
+function addDays(value, days) {
+  const date = new Date(value);
+  date.setDate(date.getDate() + days);
+  return date;
+}
+
 function daysBetween(start, end) {
   const startUtc = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
   const endUtc = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
@@ -2109,6 +2243,11 @@ function buildEmail(value) {
 function isAdmin() {
   const email = clean(state.user?.email).toLowerCase();
   return adminEmails.map((item) => item.toLowerCase()).includes(email);
+}
+
+function isGuest() {
+  const email = clean(state.user?.email).toLowerCase();
+  return guestEmails.map((item) => item.toLowerCase()).includes(email);
 }
 
 function parseScrumFileName(fileName) {
