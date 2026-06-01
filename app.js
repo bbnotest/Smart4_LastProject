@@ -1071,7 +1071,7 @@ function consolidateGanttRows(rows) {
       previous.task = row.task;
       if (row.hasDeadline && previousEnd < row.end && delayedStart <= row.end) {
         previous.delaySegments.push({
-          start: delayedStart,
+          start: row.start,
           end: row.end
         });
       }
@@ -1280,8 +1280,11 @@ function ganttDelaySegmentsForTask(entry, task) {
       if (Number.isNaN(previousDeadline.getTime()) || Number.isNaN(currentDeadline.getTime())) return null;
       if (previousDeadline >= currentDeadline) return null;
       const delayedStart = addDays(previousDeadline, 1);
+      const reportDate = dateFromKey(entry.date);
+      const start = delayedStart > reportDate ? delayedStart : reportDate;
+      if (start > currentDeadline) return null;
       return {
-        start: delayedStart,
+        start,
         end: currentDeadline
       };
     })
