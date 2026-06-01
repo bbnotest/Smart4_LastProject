@@ -537,7 +537,12 @@ function renderMissingRosterNotice() {
     .map((entry) => entry.student));
   const missingByPart = Object.entries(roster)
     .map(([part, students]) => {
-      const missing = students.filter((student) => !reported.has(student));
+      const missing = students.filter((student) => {
+        if (part === "기획" && ["팀장", "PM"].includes(getRosterRole(team, part, student))) {
+          return false;
+        }
+        return !reported.has(student);
+      });
       return missing.length ? `${part}: ${missing.join(", ")}` : "";
     })
     .filter(Boolean);
