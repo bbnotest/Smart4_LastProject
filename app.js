@@ -1163,11 +1163,18 @@ function renderGanttGroup(title, rows, range, ticks) {
 function renderGanttPeriodControls() {
   return `
     <div class="gantt-period-controls" aria-label="간트 기간 선택">
-      ${ganttPeriods.map((period) => `
-        <button class="gantt-period-button ${state.ganttPeriod === period.key ? "is-active" : ""}" type="button" data-period="${escapeHtml(period.key)}">
-          ${escapeHtml(period.label)}
-        </button>
-      `).join("")}
+      <div class="gantt-period-buttons">
+        ${ganttPeriods.map((period) => `
+          <button class="gantt-period-button ${state.ganttPeriod === period.key ? "is-active" : ""}" type="button" data-period="${escapeHtml(period.key)}">
+            ${escapeHtml(period.label)}
+          </button>
+        `).join("")}
+      </div>
+      <div class="gantt-legend" aria-label="간트 색상 안내">
+        <span><i class="legend-dot is-active"></i>파란색 : 작업중</span>
+        <span><i class="legend-dot is-delayed"></i>분홍색 : 작업지연</span>
+        <span><i class="legend-dot is-completed"></i>초록색 : 작업완료</span>
+      </div>
     </div>
   `;
 }
@@ -1203,16 +1210,27 @@ function renderGanttRow(row, range, ticks) {
   const left = (startIndex / days) * 100;
   const width = ((endIndex - startIndex + 1) / days) * 100;
   const timelineStyle = `--gantt-days:${days};--gantt-width:${days * 42}px;`;
+  const completed = isGanttCompleted(row);
+  const rowClass = [
+    row.hasDeadline ? "" : "is-unscheduled",
+    row.isDueToday ? "is-due-today" : "",
+    completed ? "is-completed" : ""
+  ].filter(Boolean).join(" ");
+  const barClass = [
+    row.hasDeadline ? "" : "is-unscheduled",
+    row.isDueToday ? "is-due-today" : "",
+    completed ? "is-completed" : ""
+  ].filter(Boolean).join(" ");
   return `
-    <div class="gantt-row ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}" style="${timelineStyle}">
+    <div class="gantt-row ${rowClass}" style="${timelineStyle}">
       <span class="gantt-sticky-cell gantt-student-cell">${escapeHtml(row.student)}</span>
       <span class="gantt-sticky-cell gantt-task-cell" title="${escapeHtml(row.task.title)}">${escapeHtml(row.task.title)}</span>
       <div class="gantt-timeline" style="${timelineStyle}">
         ${renderGanttDayLayer(ticks)}
-        <div class="gantt-bar ${row.part === "플밍" ? "is-dev" : ""} ${row.hasDeadline ? "" : "is-unscheduled"} ${row.isDueToday ? "is-due-today" : ""}" style="${row.hasDeadline ? `--bar-left:${left.toFixed(2)}%;--bar-width:${width.toFixed(2)}%;` : ""}"></div>
+        <div class="gantt-bar ${barClass}" style="${row.hasDeadline ? `--bar-left:${left.toFixed(2)}%;--bar-width:${width.toFixed(2)}%;` : ""}"></div>
         ${renderGanttDelaySegments(row, range, days)}
         ${row.hasDeadline ? `
-          <span class="gantt-bar-label" style="--bar-left:${left.toFixed(2)}%;--bar-width:${width.toFixed(2)}%;">
+          <span class="gantt-bar-label ${completed ? "is-completed" : ""}" style="--bar-left:${left.toFixed(2)}%;--bar-width:${width.toFixed(2)}%;">
             ${escapeHtml(formatDeadline(row.task.deadline, row.task.deadlineText))}
           </span>
         ` : `
@@ -1221,6 +1239,13 @@ function renderGanttRow(row, range, ticks) {
       </div>
     </div>
   `;
+}
+
+function isGanttCompleted(row) {
+  if (!row.hasDeadline) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return row.end < today;
 }
 
 function renderGanttDelaySegments(row, range, days) {
