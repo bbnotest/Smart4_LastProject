@@ -1096,6 +1096,7 @@ function ganttMergeKey(row) {
 
 function shouldMergeGanttRows(previous, row) {
   if (previous.mergeKey !== ganttMergeKey(row)) return false;
+  if (!previous.hasDeadline && row.hasDeadline) return true;
   if (!previous.hasDeadline || !row.hasDeadline) return false;
   return true;
 }
