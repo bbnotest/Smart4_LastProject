@@ -62,6 +62,7 @@ const state = {
   teamNotes: [],
   delayReviews: [],
   delayContexts: new Map(),
+  openDelaySummaryKeys: new Set(),
   comments: [],
   user: null,
   view: "team",
@@ -462,8 +463,10 @@ function normalizeTeamNotes(payload, override = {}) {
       part: clean(item.part),
       student: clean(item.student),
       taskTitle: clean(item.taskTitle),
+      previousDate: clean(item.previousDate),
       previousDeadline: parseDeadlineValue(item.previousDeadline),
       previousDeadlineText: clean(item.previousDeadlineText),
+      currentDate: clean(item.currentDate || item.date),
       currentDeadline: parseDeadlineValue(item.currentDeadline),
       currentDeadlineText: clean(item.currentDeadlineText),
       note: clean(item.note)
@@ -472,6 +475,7 @@ function normalizeTeamNotes(payload, override = {}) {
 }
 
 function render() {
+  preserveOpenDelaySummaries();
   state.delayContexts = new Map();
   syncFilterOptions();
   const entries = filteredEntries();
@@ -496,6 +500,7 @@ function render() {
     renderTeamList(entries);
   }
   renderStudentHistory();
+  restoreOpenDelaySummaries();
   bindDelayReviewButtons();
 }
 
@@ -735,7 +740,9 @@ function issueHistoryItems() {
   const selectedTeam = state.filters.team;
   const stored = state.teamNotes
     .filter((note) => note.team === selectedTeam)
-    .flatMap((note) => (note.items || []).map((item) => buildDelayContext(item, note)));
+    .flatMap((note) => (note.items || [])
+      .filter((item) => isActionableDelayItem(item, note))
+      .map((item) => buildDelayContext(item, note)));
 
   const storedKeys = new Set(stored.map((item) => item.key));
   const computed = state.entries
@@ -1299,11 +1306,19 @@ function storedTeamNotesForEntries(entries) {
 function renderTeamSpecialNotes(notes) {
   if (!notes.length) return "";
   return notes.map((note) => {
-    const visibleItems = (note.items || []).filter((item) => !isRejectedDelayItem(item, note));
+    const visibleItems = (note.items || [])
+      .filter((item) => isActionableDelayItem(item, note))
+      .filter((item) => !isRejectedDelayItem(item, note));
     if ((note.items || []).length && !visibleItems.length) return "";
     if (!visibleItems.length && !note.message) return "";
+    const summaryKey = delaySummaryKey({
+      team: note.team,
+      date: note.date,
+      type: note.type,
+      title: displayTeamNoteTitle(note.title)
+    });
     return `
-      <details class="daily-delay-summary">
+      <details class="daily-delay-summary" data-delay-summary-key="${escapeHtml(summaryKey)}">
         <summary>
           <span>${escapeHtml(displayTeamNoteTitle(note.title))}</span>
           <small>${escapeHtml(`${visibleItems.length}건`)}</small>
@@ -1380,10 +1395,17 @@ function renderDelayedTaskSummary(items) {
       currentDeadlineText: task.deadlineText,
       note: ""
     }))
+    .filter((item) => isActionableDelayItem(item, { team: item.team, date: item.date }))
     .filter((item) => !isRejectedDelayItem(item, { team: item.team, date: item.date }));
   if (!delayItems.length) return "";
+  const summaryKey = delaySummaryKey({
+    team: delayItems[0]?.team,
+    date: delayItems[0]?.date,
+    type: "computed-delay",
+    title: "특이사항"
+  });
   return `
-    <details class="daily-delay-summary">
+    <details class="daily-delay-summary" data-delay-summary-key="${escapeHtml(summaryKey)}">
       <summary>
         <span>특이사항</span>
         <small>${escapeHtml(`${delayItems.length}건`)}</small>
@@ -1396,6 +1418,42 @@ function renderDelayedTaskSummary(items) {
 function isRejectedDelayItem(item, note = {}) {
   const context = buildDelayContext(item, note);
   return normalizeReviewDecision(delayReviewForKey(context.key)?.decision) === "rejected";
+}
+
+function preserveOpenDelaySummaries() {
+  state.openDelaySummaryKeys = new Set(
+    Array.from(document.querySelectorAll(".daily-delay-summary[open][data-delay-summary-key]"))
+      .map((details) => details.dataset.delaySummaryKey)
+      .filter(Boolean)
+  );
+}
+
+function restoreOpenDelaySummaries() {
+  document.querySelectorAll(".daily-delay-summary[data-delay-summary-key]").forEach((details) => {
+    if (state.openDelaySummaryKeys.has(details.dataset.delaySummaryKey)) {
+      details.open = true;
+    }
+  });
+}
+
+function delaySummaryKey(value) {
+  return [
+    clean(value.team),
+    clean(value.date),
+    clean(value.type),
+    clean(value.title)
+  ].join("|");
+}
+
+function isActionableDelayItem(item, note = {}) {
+  const currentDate = clean(item.currentDate || item.date || note.date);
+  const previousDate = clean(item.previousDate);
+  if (previousDate && currentDate && previousDate === currentDate) return false;
+
+  const context = buildDelayContext(item, note);
+  if (context.previousDate && context.date && context.previousDate === context.date) return false;
+
+  return true;
 }
 
 function displayTeamNoteTitle(value) {
