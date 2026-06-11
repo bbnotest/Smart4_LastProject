@@ -60,6 +60,7 @@ const teamRoster = {
 const state = {
   entries: [],
   teamNotes: [],
+  studentReports: [],
   delayReviews: [],
   delayContexts: new Map(),
   openDelaySummaryKeys: new Set(),
@@ -72,6 +73,7 @@ const state = {
   historyTeam: "1팀",
   historyIndex: -1,
   studentMode: "overview",
+  reportFilter: "all",
   ganttPeriod: "all",
   issueFilters: {
     date: "all",
@@ -106,6 +108,7 @@ const els = {
   teamIssueTab: document.querySelector("#teamIssueTab"),
   overviewTab: document.querySelector("#overviewTab"),
   historyTab: document.querySelector("#historyTab"),
+  reportTab: document.querySelector("#reportTab"),
   studentSearchInput: document.querySelector("#studentSearchInput"),
   jsonInput: document.querySelector("#jsonInput"),
   uploadMessage: document.querySelector("#uploadMessage"),
@@ -193,6 +196,7 @@ els.teamDailyTab.addEventListener("click", () => setTeamMode("daily"));
 els.teamIssueTab.addEventListener("click", () => setTeamMode("issue"));
 els.overviewTab.addEventListener("click", () => setStudentMode("overview"));
 els.historyTab.addEventListener("click", () => setStudentMode("history"));
+els.reportTab.addEventListener("click", () => setStudentMode("report"));
 els.studentSearchInput.addEventListener("input", () => {
   const match = findStudentByKeyword(els.studentSearchInput.value);
   if (match) {
@@ -205,6 +209,7 @@ function setStudentMode(mode) {
   state.studentMode = mode;
   els.overviewTab.classList.toggle("is-active", mode === "overview");
   els.historyTab.classList.toggle("is-active", mode === "history");
+  els.reportTab.classList.toggle("is-active", mode === "report");
   renderStudentHistory();
 }
 
@@ -290,6 +295,19 @@ async function loadRemoteData() {
     }
 
     try {
+      const reportsSnapshot = await fb.getDocs(fb.query(fb.collection(db, "scrumStudentReports"), fb.orderBy("period.endDate", "desc")));
+      state.studentReports = reportsSnapshot.docs.map((item) => item.data());
+    } catch (reportsError) {
+      state.studentReports = [];
+      if (reportsError?.code === "permission-denied") {
+        els.permissionNotice.textContent = "scrumStudentReports 읽기 권한이 없습니다. Firebase 보안 규칙에 scrumStudentReports 권한을 추가하세요.";
+        els.permissionNotice.classList.remove("is-hidden");
+      } else {
+        throw reportsError;
+      }
+    }
+
+    try {
       const reviewsSnapshot = await fb.getDocs(fb.collection(db, "scrumDelayReviews"));
       state.delayReviews = reviewsSnapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
     } catch (reviewsError) {
@@ -358,6 +376,35 @@ async function importTeamNotes(notes, options = {}) {
   state.teamNotes.push(...notes);
 }
 
+async function importStudentReports(reports, options = {}) {
+  if (!options.team || !options.date) return;
+
+  if (options.overwrite) {
+    await removeStudentReportsForTeamDate(options.team, options.date);
+  }
+
+  if (!reports.length) return;
+
+  if (firebaseReady) {
+    await Promise.all(reports.map((report, index) => {
+      const id = [
+        report.team,
+        report.date,
+        report.student,
+        report.reportType,
+        report.period?.startDate,
+        report.period?.endDate,
+        index + 1
+      ].map(slug).join("_");
+      return fb.setDoc(fb.doc(db, "scrumStudentReports", id), report, { merge: true });
+    }));
+    return;
+  }
+
+  state.studentReports = state.studentReports.filter((report) => !(report.team === options.team && report.date === options.date));
+  state.studentReports.push(...reports);
+}
+
 async function removeEntriesForTeamDate(team, date) {
   if (firebaseReady) {
     const snapshot = await fb.getDocs(fb.query(
@@ -386,6 +433,20 @@ async function removeTeamNotesForTeamDate(team, date) {
   state.teamNotes = state.teamNotes.filter((note) => !(note.team === team && note.date === date));
 }
 
+async function removeStudentReportsForTeamDate(team, date) {
+  if (firebaseReady) {
+    const snapshot = await fb.getDocs(fb.query(
+      fb.collection(db, "scrumStudentReports"),
+      fb.where("team", "==", team),
+      fb.where("date", "==", date)
+    ));
+    await Promise.all(snapshot.docs.map((item) => fb.deleteDoc(fb.doc(db, "scrumStudentReports", item.id))));
+    return;
+  }
+
+  state.studentReports = state.studentReports.filter((report) => !(report.team === team && report.date === date));
+}
+
 async function uploadJsonFiles(files) {
   const invalid = files.find((file) => !parseScrumFileName(file.name));
   if (invalid) {
@@ -401,12 +462,18 @@ async function uploadJsonFiles(files) {
       const parsed = JSON.parse(await file.text());
       const entries = normalizeEntries(parsed, { team: fileInfo.team, date: fileInfo.date });
       const teamNotes = normalizeTeamNotes(parsed, { team: fileInfo.team, date: fileInfo.date });
+      const studentReports = normalizeStudentReports(parsed, { team: fileInfo.team, date: fileInfo.date });
       await importEntries(entries, {
         team: fileInfo.team,
         date: fileInfo.date,
         overwrite: true
       });
       await importTeamNotes(teamNotes, {
+        team: fileInfo.team,
+        date: fileInfo.date,
+        overwrite: true
+      });
+      await importStudentReports(studentReports, {
         team: fileInfo.team,
         date: fileInfo.date,
         overwrite: true
@@ -472,6 +539,69 @@ function normalizeTeamNotes(payload, override = {}) {
       note: clean(item.note)
     })).filter((item) => item.student || item.taskTitle || item.note) : []
   })).filter((row) => row.team && row.date && (row.title || row.message || row.items.length));
+}
+
+function normalizeStudentReports(payload, override = {}) {
+  const rows = Array.isArray(payload?.studentReports) ? payload.studentReports : [];
+  return rows.map((row) => {
+    const period = normalizeReportPeriod(row.period);
+    const milestone = normalizeReportPeriod(row.milestone);
+    return {
+      team: clean(override.team || row.team),
+      date: clean(override.date || row.date),
+      student: clean(row.student),
+      part: clean(row.part),
+      reportType: clean(row.reportType || "weekly"),
+      period,
+      milestone,
+      summary: clean(row.summary),
+      taskAnalysis: normalizeReportTasks(row.taskAnalysis),
+      stats: normalizeReportStats(row.stats),
+      gantt: normalizeReportGantt(row.gantt),
+      notice: clean(row.notice) || "보고된 데일리 스크럼을 기준으로 AI가 정리한 문서입니다. 실제 수행 내용과 다를 수 있으니 참고용으로만 확인해 주세요."
+    };
+  }).filter((row) => row.team && row.date && row.student && row.reportType && row.period.startDate && row.period.endDate);
+}
+
+function normalizeReportPeriod(value = {}) {
+  return {
+    label: clean(value.label),
+    name: clean(value.name),
+    startDate: normalizeDateKey(value.startDate),
+    endDate: normalizeDateKey(value.endDate)
+  };
+}
+
+function normalizeReportTasks(rows) {
+  return Array.isArray(rows) ? rows.map((row) => ({
+    title: clean(row.title),
+    startDate: normalizeDateKey(row.startDate),
+    endDate: normalizeDateKey(row.endDate),
+    deadline: parseDeadlineValue(row.deadline),
+    status: clean(row.status),
+    evidenceDates: Array.isArray(row.evidenceDates) ? row.evidenceDates.map(normalizeDateKey).filter(Boolean) : [],
+    note: clean(row.note)
+  })).filter((row) => row.title) : [];
+}
+
+function normalizeReportGantt(rows) {
+  return Array.isArray(rows) ? rows.map((row) => ({
+    title: clean(row.title),
+    startDate: normalizeDateKey(row.startDate),
+    endDate: normalizeDateKey(row.endDate),
+    deadline: parseDeadlineValue(row.deadline),
+    status: clean(row.status)
+  })).filter((row) => row.title && row.startDate && row.endDate) : [];
+}
+
+function normalizeReportStats(value = {}) {
+  return {
+    reportedDays: numberOrZero(value.reportedDays),
+    taskCount: numberOrZero(value.taskCount),
+    deadlineTaskCount: numberOrZero(value.deadlineTaskCount),
+    delayedIssueCount: numberOrZero(value.delayedIssueCount),
+    specialNoteCount: numberOrZero(value.specialNoteCount)
+  };
 }
 
 function render() {
@@ -1901,7 +2031,7 @@ function renderStudentHistory() {
     state.historyIndex = Math.max(0, chronological.length - 1);
   }
   els.studentHistory.innerHTML = `
-    ${state.studentMode === "overview" ? renderOverviewPanel(selected, chronological) : renderChroniclePanel(selected, history)}
+    ${renderStudentModePanel(selected, chronological, history)}
   `;
 
   if (state.studentMode === "overview") {
@@ -1919,6 +2049,19 @@ function renderStudentHistory() {
 
     bindHistorySwipe(chronological.length);
   }
+  if (state.studentMode === "report") {
+    bindReportControls();
+  }
+}
+
+function renderStudentModePanel(selected, chronological, history) {
+  if (state.studentMode === "overview") {
+    return renderOverviewPanel(selected, chronological);
+  }
+  if (state.studentMode === "report") {
+    return renderStudentReportPanel(selected);
+  }
+  return renderChroniclePanel(selected, history);
 }
 
 function findStudentByKeyword(value) {
@@ -2023,6 +2166,184 @@ function renderOverviewPanel(selected, history) {
       ` : `<div class="empty-state">히스토리가 없습니다.</div>`}
     </section>
   `;
+}
+
+function renderStudentReportPanel(selected) {
+  const reports = studentReportsFor(selected);
+  const filtered = reports.filter((report) => state.reportFilter === "all" || report.reportType === state.reportFilter);
+  return `
+    <section class="history-panel report-panel">
+      <div class="report-toolbar">
+        <div>
+          <h2>${escapeHtml(selected)} 학생 보고서</h2>
+          <p>주간/마일스톤 종료일 JSON에 첨부된 보고서 데이터를 기준으로 표시합니다.</p>
+        </div>
+        <button id="printReportButton" class="primary-button" type="button" ${filtered.length ? "" : "disabled"}>PDF 저장</button>
+      </div>
+      <div class="report-filter-buttons" aria-label="보고서 종류 선택">
+        ${[
+          ["all", "전체"],
+          ["weekly", "주간"],
+          ["milestone", "마일스톤"]
+        ].map(([key, label]) => `
+          <button class="report-filter-button ${state.reportFilter === key ? "is-active" : ""}" type="button" data-report-filter="${escapeHtml(key)}">
+            ${escapeHtml(label)}
+          </button>
+        `).join("")}
+      </div>
+      ${filtered.length ? `
+        <div class="report-document-list">
+          ${filtered.map(renderStudentReportDocument).join("")}
+        </div>
+      ` : `<div class="empty-state">등록된 보고서 데이터가 없습니다.</div>`}
+    </section>
+  `;
+}
+
+function studentReportsFor(student) {
+  return state.studentReports
+    .filter((report) => report.student === student && report.team === state.historyTeam)
+    .sort((a, b) => {
+      const typeDiff = reportTypeOrder(a.reportType) - reportTypeOrder(b.reportType);
+      if (typeDiff) return typeDiff;
+      return (b.period?.endDate || b.date || "").localeCompare(a.period?.endDate || a.date || "");
+    });
+}
+
+function reportTypeOrder(type) {
+  return type === "milestone" ? 0 : type === "weekly" ? 1 : 2;
+}
+
+function renderStudentReportDocument(report) {
+  const range = reportRange(report);
+  const ticks = ganttTicks(range);
+  const rows = reportGanttRows(report);
+  const label = report.reportType === "milestone" ? "마일스톤 보고서" : "주간 보고서";
+  return `
+    <article class="student-report-document">
+      <header class="report-cover">
+        <div>
+          <p class="eyebrow">${escapeHtml(label)}</p>
+          <h2>${escapeHtml(report.period.label || report.milestone.name || report.date)}</h2>
+          <p>${escapeHtml(report.team)} · ${escapeHtml(report.part || "파트 미지정")} · ${escapeHtml(report.student)}</p>
+        </div>
+        <div class="report-period-box">
+          <span>보고 기간</span>
+          <strong>${escapeHtml(formatDateKeyShort(report.period.startDate))} ~ ${escapeHtml(formatDateKeyShort(report.period.endDate))}</strong>
+          ${report.milestone?.name ? `<small>${escapeHtml(report.milestone.name)} · ${escapeHtml(formatDateKeyShort(report.milestone.startDate))} ~ ${escapeHtml(formatDateKeyShort(report.milestone.endDate))}</small>` : ""}
+        </div>
+      </header>
+      <section class="report-stat-grid">
+        ${renderReportStat("보고일", report.stats.reportedDays)}
+        ${renderReportStat("작업 수", report.stats.taskCount)}
+        ${renderReportStat("마감 작업", report.stats.deadlineTaskCount)}
+        ${renderReportStat("지연 이슈", report.stats.delayedIssueCount)}
+        ${renderReportStat("특이사항", report.stats.specialNoteCount)}
+      </section>
+      <section class="report-section">
+        <h3>분석 요약</h3>
+        <p>${escapeHtml(report.summary || "등록된 분석 요약이 없습니다.")}</p>
+      </section>
+      <section class="report-section">
+        <h3>개인 작업 간트차트</h3>
+        ${rows.length ? `
+          <div class="gantt-board report-gantt">
+            ${renderGanttGroup("작업 흐름", rows, range, ticks)}
+          </div>
+        ` : `<div class="empty-state">간트차트 데이터가 없습니다.</div>`}
+      </section>
+      <section class="report-section">
+        <h3>작업 분석</h3>
+        ${report.taskAnalysis.length ? `
+          <div class="report-task-table-wrap">
+            <table class="report-task-table">
+              <thead>
+                <tr>
+                  <th>작업</th>
+                  <th>기간</th>
+                  <th>마감일</th>
+                  <th>상태</th>
+                  <th>근거 날짜</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${report.taskAnalysis.map((item) => `
+                  <tr>
+                    <td>
+                      <strong>${escapeHtml(item.title)}</strong>
+                      ${item.note ? `<small>${escapeHtml(item.note)}</small>` : ""}
+                    </td>
+                    <td>${escapeHtml(formatDateKeyShort(item.startDate))} ~ ${escapeHtml(formatDateKeyShort(item.endDate))}</td>
+                    <td>${escapeHtml(formatDeadline(item.deadline))}</td>
+                    <td>${escapeHtml(item.status || "미지정")}</td>
+                    <td>${escapeHtml(item.evidenceDates.map(formatDateKeyShort).join(", "))}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        ` : `<div class="empty-state">작업 분석 데이터가 없습니다.</div>`}
+      </section>
+      <footer class="report-notice">${escapeHtml(report.notice)}</footer>
+    </article>
+  `;
+}
+
+function renderReportStat(label, value) {
+  return `
+    <div class="report-stat">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(String(value ?? 0))}</strong>
+    </div>
+  `;
+}
+
+function reportRange(report) {
+  const min = dateFromKey(report.period.startDate);
+  const max = dateFromKey(report.period.endDate);
+  min.setHours(0, 0, 0, 0);
+  max.setHours(23, 59, 59, 999);
+  return {
+    min,
+    max,
+    days: Math.max(1, Math.ceil((max - min) / 86400000)),
+    label: `${report.period.label || "보고 기간"} · ${dateKey(min)} ~ ${dateKey(max)}`
+  };
+}
+
+function reportGanttRows(report) {
+  return report.gantt.map((item) => {
+    const start = dateFromKey(item.startDate);
+    const end = dateFromKey(item.endDate);
+    const deadline = deadlineToDate(item.deadline);
+    const hasDeadline = !Number.isNaN(deadline.getTime());
+    return {
+      part: report.part || "파트 미지정",
+      team: report.team,
+      student: report.student,
+      task: {
+        title: item.title,
+        deadline: item.deadline,
+        deadlineText: item.deadline ? "" : "미정"
+      },
+      start,
+      end: end < start ? start : end,
+      date: report.date,
+      role: getRosterRole(report.team, report.part, report.student),
+      hasDeadline,
+      isDueToday: hasDeadline && sameDate(deadline, new Date())
+    };
+  }).sort(compareGanttRows);
+}
+
+function bindReportControls() {
+  document.querySelectorAll(".report-filter-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.reportFilter = button.dataset.reportFilter || "all";
+      renderStudentHistory();
+    });
+  });
+  document.querySelector("#printReportButton")?.addEventListener("click", () => window.print());
 }
 
 function renderChroniclePanel(selected, history) {
@@ -2196,6 +2517,23 @@ function unique(values) {
 
 function clean(value) {
   return String(value ?? "").trim();
+}
+
+function normalizeDateKey(value) {
+  const text = clean(value);
+  if (!text) return "";
+  const match = text.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (match) {
+    return `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`;
+  }
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return "";
+  return dateKey(date);
+}
+
+function numberOrZero(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
 }
 
 function meaningfulNote(value) {
