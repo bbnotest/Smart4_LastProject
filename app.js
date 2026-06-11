@@ -725,6 +725,7 @@ function normalizeReportTasks(rows) {
     endDate: normalizeDateKey(row.endDate),
     deadline: parseDeadlineValue(row.deadline),
     status: clean(row.status),
+    delayReason: clean(row.delayReason),
     evidenceDates: Array.isArray(row.evidenceDates) ? row.evidenceDates.map(normalizeDateKey).filter(Boolean) : [],
     note: clean(row.note)
   })).filter((row) => row.title) : [];
@@ -2562,6 +2563,7 @@ function renderStudentReportDocument(report) {
                       <td>
                         <strong>${escapeHtml(item.title)}</strong>
                         ${item.note ? `<small>${escapeHtml(item.note)}</small>` : ""}
+                        ${item.delayReason ? `<small class="report-delay-reason"><b>지연 사유</b>${escapeHtml(item.delayReason)}</small>` : ""}
                       </td>
                       <td>${escapeHtml(formatDateKeyShort(item.startDate))} ~ ${escapeHtml(formatDateKeyShort(item.endDate))}</td>
                       <td>${escapeHtml(formatDeadline(item.deadline))}</td>
