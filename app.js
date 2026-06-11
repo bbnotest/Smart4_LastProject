@@ -2479,74 +2479,152 @@ function renderStudentReportDocument(report) {
   const ticks = ganttTicks(range);
   const rows = reportGanttRows(report);
   const label = report.reportType === "milestone" ? "마일스톤 보고서" : "주간 보고서";
+  const ganttPages = rows.length ? chunkReportItems(rows, 8) : [[]];
+  const taskPages = report.taskAnalysis.length ? chunkReportItems(report.taskAnalysis, 6) : [];
+  const totalPages = ganttPages.length + taskPages.length;
+  let pageNumber = 0;
   return `
     <article class="student-report-document">
-      <header class="report-cover">
-        <div>
-          <p class="eyebrow">${escapeHtml(label)}</p>
-          <h2>${escapeHtml(report.period.label || report.milestone.name || report.date)}</h2>
-          <p>${escapeHtml(report.team)} · ${escapeHtml(report.part || "파트 미지정")} · ${escapeHtml(report.student)}</p>
-        </div>
-        <div class="report-period-box">
-          <span>보고 기간</span>
-          <strong>${escapeHtml(formatDateKeyShort(report.period.startDate))} ~ ${escapeHtml(formatDateKeyShort(report.period.endDate))}</strong>
-          ${report.milestone?.name ? `<small>${escapeHtml(report.milestone.name)} · ${escapeHtml(formatDateKeyShort(report.milestone.startDate))} ~ ${escapeHtml(formatDateKeyShort(report.milestone.endDate))}</small>` : ""}
-        </div>
-      </header>
-      <section class="report-stat-grid">
-        ${renderReportStat("보고일", report.stats.reportedDays)}
-        ${renderReportStat("작업 수", report.stats.taskCount)}
-        ${renderReportStat("마감 작업", report.stats.deadlineTaskCount)}
-        ${renderReportStat("지연 이슈", report.stats.delayedIssueCount)}
-        ${renderReportStat("특이사항", report.stats.specialNoteCount)}
-      </section>
-      <section class="report-section">
-        <h3>분석 요약</h3>
-        <p>${escapeHtml(report.summary || "등록된 분석 요약이 없습니다.")}</p>
-      </section>
-      <section class="report-section">
-        <h3>개인 작업 간트차트</h3>
-        ${rows.length ? `
-          <div class="gantt-board report-gantt">
-            ${renderGanttGroup("작업 흐름", rows, range, ticks)}
-          </div>
-        ` : `<div class="empty-state">간트차트 데이터가 없습니다.</div>`}
-      </section>
-      <section class="report-section">
-        <h3>작업 분석</h3>
-        ${report.taskAnalysis.length ? `
-          <div class="report-task-table-wrap">
-            <table class="report-task-table">
-              <thead>
-                <tr>
-                  <th>작업</th>
-                  <th>기간</th>
-                  <th>마감일</th>
-                  <th>상태</th>
-                  <th>근거 날짜</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${report.taskAnalysis.map((item) => `
-                  <tr>
-                    <td>
-                      <strong>${escapeHtml(item.title)}</strong>
-                      ${item.note ? `<small>${escapeHtml(item.note)}</small>` : ""}
-                    </td>
-                    <td>${escapeHtml(formatDateKeyShort(item.startDate))} ~ ${escapeHtml(formatDateKeyShort(item.endDate))}</td>
-                    <td>${escapeHtml(formatDeadline(item.deadline))}</td>
-                    <td>${escapeHtml(item.status || "미지정")}</td>
-                    <td>${escapeHtml(item.evidenceDates.map(formatDateKeyShort).join(", "))}</td>
-                  </tr>
-                `).join("")}
-              </tbody>
-            </table>
-          </div>
-        ` : `<div class="empty-state">작업 분석 데이터가 없습니다.</div>`}
-      </section>
-      <footer class="report-notice">${escapeHtml(report.notice)}</footer>
+      ${ganttPages.map((pageRows, index) => {
+        pageNumber += 1;
+        return `
+          <section class="report-sheet ${index === 0 ? "report-sheet--overview" : ""}">
+            ${renderReportHeader(report, label, index === 0 ? "작업 개요" : "작업 흐름")}
+            ${index === 0 ? `
+              <section class="report-stat-grid">
+                ${renderReportStat("보고일", report.stats.reportedDays)}
+                ${renderReportStat("작업 수", report.stats.taskCount)}
+                ${renderReportStat("마감 작업", report.stats.deadlineTaskCount)}
+                ${renderReportStat("검토 이슈", report.stats.delayedIssueCount)}
+                ${renderReportStat("특이사항", report.stats.specialNoteCount)}
+              </section>
+              <section class="report-section report-summary-section">
+                <div class="report-section-title">
+                  <span>01</span>
+                  <h3>분석 요약</h3>
+                </div>
+                <p>${escapeHtml(report.summary || "등록된 분석 요약이 없습니다.")}</p>
+              </section>
+            ` : `
+              <div class="report-continuation">
+                <strong>개인 작업 흐름</strong>
+                <span>${index + 1} / ${ganttPages.length}</span>
+              </div>
+            `}
+            <section class="report-section report-gantt-section">
+              <div class="report-section-title">
+                <span>${index === 0 ? "02" : String(index + 2).padStart(2, "0")}</span>
+                <h3>개인 작업 간트차트</h3>
+              </div>
+              ${pageRows.length ? `
+                <div class="gantt-board report-gantt">
+                  ${renderGanttGroup("작업 흐름", pageRows, range, ticks)}
+                </div>
+              ` : `<div class="empty-state">간트차트 데이터가 없습니다.</div>`}
+            </section>
+            ${renderReportPageFooter(report, pageNumber, totalPages, false)}
+          </section>
+        `;
+      }).join("")}
+      ${taskPages.map((pageItems, index) => {
+        pageNumber += 1;
+        return `
+          <section class="report-sheet report-sheet--analysis">
+            ${renderReportHeader(report, label, "작업 분석")}
+            <div class="report-continuation">
+              <strong>세부 작업 기록</strong>
+              <span>${index + 1} / ${taskPages.length}</span>
+            </div>
+            <section class="report-section report-analysis-section">
+              <div class="report-section-title">
+                <span>${String(ganttPages.length + index + 2).padStart(2, "0")}</span>
+                <h3>작업 분석</h3>
+              </div>
+              <div class="report-task-table-wrap">
+                <table class="report-task-table">
+                  <colgroup>
+                    <col class="report-task-title-column">
+                    <col class="report-task-period-column">
+                    <col class="report-task-deadline-column">
+                    <col class="report-task-status-column">
+                    <col class="report-task-evidence-column">
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>작업</th>
+                      <th>진행 기간</th>
+                      <th>마감일</th>
+                      <th>상태</th>
+                      <th>보고 근거</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${pageItems.map((item) => `
+                      <tr>
+                        <td>
+                          <strong>${escapeHtml(item.title)}</strong>
+                          ${item.note ? `<small>${escapeHtml(item.note)}</small>` : ""}
+                        </td>
+                        <td>${escapeHtml(formatDateKeyShort(item.startDate))} ~ ${escapeHtml(formatDateKeyShort(item.endDate))}</td>
+                        <td>${escapeHtml(formatDeadline(item.deadline))}</td>
+                        <td><span class="report-status ${reportStatusClass(item.status)}">${escapeHtml(item.status || "미지정")}</span></td>
+                        <td>${escapeHtml(item.evidenceDates.map(formatDateKeyShort).join(", "))}</td>
+                      </tr>
+                    `).join("")}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+            ${renderReportPageFooter(report, pageNumber, totalPages, true)}
+          </section>
+        `;
+      }).join("")}
     </article>
   `;
+}
+
+function chunkReportItems(items, pageSize) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += pageSize) {
+    chunks.push(items.slice(index, index + pageSize));
+  }
+  return chunks;
+}
+
+function renderReportHeader(report, label, sectionLabel) {
+  return `
+    <header class="report-cover">
+      <div class="report-title-block">
+        <div class="report-brand-line">
+          <span class="report-brand-mark"></span>
+          <p class="eyebrow">${escapeHtml(label)} · ${escapeHtml(sectionLabel)}</p>
+        </div>
+        <h2>${escapeHtml(report.period.label || report.milestone?.name || report.date)}</h2>
+        <p>${escapeHtml(report.team)} · ${escapeHtml(report.part || "파트 미지정")} · <strong>${escapeHtml(report.student)}</strong></p>
+      </div>
+      <div class="report-period-box">
+        <span>REPORT PERIOD</span>
+        <strong>${escapeHtml(formatDateKeyShort(report.period.startDate))} ~ ${escapeHtml(formatDateKeyShort(report.period.endDate))}</strong>
+        ${report.milestone?.name ? `<small>${escapeHtml(report.milestone.name)} · ${escapeHtml(formatDateKeyShort(report.milestone.startDate))} ~ ${escapeHtml(formatDateKeyShort(report.milestone.endDate))}</small>` : ""}
+      </div>
+    </header>
+  `;
+}
+
+function renderReportPageFooter(report, pageNumber, totalPages, showNotice) {
+  return `
+    <footer class="report-page-footer">
+      <span>${showNotice ? escapeHtml(report.notice) : `${escapeHtml(report.team)} ${escapeHtml(report.student)} 작업 보고서`}</span>
+      <strong>${pageNumber} / ${totalPages}</strong>
+    </footer>
+  `;
+}
+
+function reportStatusClass(status) {
+  const value = clean(status);
+  if (value.includes("완료") || value.includes("확인")) return "is-complete";
+  if (value.includes("검토") || value.includes("보류") || value.includes("지연")) return "is-review";
+  return "is-progress";
 }
 
 function renderReportStat(label, value) {
