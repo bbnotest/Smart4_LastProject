@@ -100,15 +100,12 @@
           <section class="admin-section">
             <h3>기간 데이터 추출</h3>
             <p>보고서 제작 전 Firebase에 저장된 운영 데이터를 기간 기준으로 내려받습니다.</p>
-            <div class="admin-form-grid">
-              <label>
-                시작일
-                <input id="exportStartDate" type="date">
-              </label>
-              <label>
-                종료일
-                <input id="exportEndDate" type="date">
-              </label>
+            <div class="admin-export-layout">
+              <div>
+                <span class="control-label">데이터 기간 선택</span>
+                <div id="exportDateCalendar" class="export-date-calendar" aria-label="Firebase 데이터 추출 기간 선택"></div>
+                <p id="exportDateRangeText" class="export-range-text">업로드된 데이터를 불러오면 선택 가능한 날짜가 표시됩니다.</p>
+              </div>
               <label>
                 팀
                 <select id="exportTeamSelect">

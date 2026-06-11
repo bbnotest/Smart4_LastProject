@@ -1695,6 +1695,100 @@ textarea:focus {
   gap: 12px;
 }
 
+.admin-export-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 220px);
+  gap: 12px;
+  align-items: start;
+}
+
+.export-date-calendar {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 10px;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.export-calendar-month {
+  flex: 0 0 272px;
+  display: grid;
+  gap: 8px;
+}
+
+.export-calendar-month h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.export-calendar-weekdays,
+.export-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.export-calendar-weekdays span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.export-date-cell {
+  min-width: 0;
+  min-height: 34px;
+  padding: 0;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.export-date-cell.is-blank {
+  border: 0;
+  background: transparent;
+}
+
+.export-date-cell.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.28;
+}
+
+.export-date-cell.is-off-day:not(.is-disabled) {
+  background: rgba(148, 163, 184, 0.16);
+}
+
+.export-date-cell.has-data:hover {
+  color: var(--accent-strong);
+  border-color: rgba(37, 99, 235, 0.45);
+}
+
+.export-date-cell.is-in-range {
+  color: var(--accent-strong);
+  background: rgba(37, 99, 235, 0.12);
+  border-color: rgba(37, 99, 235, 0.22);
+}
+
+.export-date-cell.is-start,
+.export-date-cell.is-end {
+  color: #ffffff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.export-range-text {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .admin-status {
   padding: 10px 12px;
   background: var(--panel-soft);
@@ -2010,6 +2104,7 @@ textarea:focus {
   .filters,
   .history-layout,
   .student-history-toolbar,
+  .admin-export-layout,
   .admin-form-grid,
   .personal-work-layout,
   .roster-section,

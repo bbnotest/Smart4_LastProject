@@ -74,6 +74,8 @@ const state = {
   historyIndex: -1,
   studentMode: "overview",
   reportFilter: "all",
+  exportStartDate: "",
+  exportEndDate: "",
   ganttPeriod: "all",
   issueFilters: {
     date: "all",
@@ -112,8 +114,8 @@ const els = {
   studentSearchInput: document.querySelector("#studentSearchInput"),
   jsonInput: document.querySelector("#jsonInput"),
   reportJsonInput: document.querySelector("#reportJsonInput"),
-  exportStartDate: document.querySelector("#exportStartDate"),
-  exportEndDate: document.querySelector("#exportEndDate"),
+  exportDateCalendar: document.querySelector("#exportDateCalendar"),
+  exportDateRangeText: document.querySelector("#exportDateRangeText"),
   exportTeamSelect: document.querySelector("#exportTeamSelect"),
   exportFirebaseButton: document.querySelector("#exportFirebaseButton"),
   exportMessage: document.querySelector("#exportMessage"),
@@ -298,13 +300,19 @@ function syncAdminAccess() {
 }
 
 function setAdminExportDefaults() {
-  const today = todayKey();
-  const selectedDate = state.filters.date !== "all" ? state.filters.date : today;
-  if (els.exportStartDate && !els.exportStartDate.value) {
-    els.exportStartDate.value = selectedDate;
+  const dates = availableExportDates();
+  if (!dates.length) return;
+  const selectedDate = state.filters.date !== "all" && dates.includes(state.filters.date)
+    ? state.filters.date
+    : dates[dates.length - 1];
+  if (state.exportStartDate && !state.exportEndDate && dates.includes(state.exportStartDate)) {
+    return;
   }
-  if (els.exportEndDate && !els.exportEndDate.value) {
-    els.exportEndDate.value = selectedDate;
+  if (!state.exportStartDate || !dates.includes(state.exportStartDate)) {
+    state.exportStartDate = selectedDate;
+  }
+  if (!state.exportEndDate || !dates.includes(state.exportEndDate)) {
+    state.exportEndDate = selectedDate;
   }
 }
 
@@ -552,12 +560,12 @@ async function uploadReportJsonFiles(files) {
 }
 
 async function exportFirebaseDataByPeriod() {
-  const startDate = normalizeDateKey(els.exportStartDate?.value);
-  const endDate = normalizeDateKey(els.exportEndDate?.value);
+  const startDate = normalizeDateKey(state.exportStartDate);
+  const endDate = normalizeDateKey(state.exportEndDate);
   const team = clean(els.exportTeamSelect?.value || "all");
 
   if (!startDate || !endDate) {
-    setExportMessage("시작일과 종료일을 선택하세요.", true);
+    setExportMessage("달력에서 시작일과 종료일을 선택하세요.", true);
     return;
   }
   if (startDate > endDate) {
@@ -746,6 +754,7 @@ function render() {
   preserveOpenDelaySummaries();
   state.delayContexts = new Map();
   syncFilterOptions();
+  renderExportDateCalendar();
   const entries = filteredEntries();
   renderTodayNotice();
   renderMissingRosterNotice();
@@ -917,6 +926,119 @@ function renderDateStrip(dates) {
       render();
     });
   });
+}
+
+function availableExportDates() {
+  return unique([
+    ...state.entries.map((entry) => entry.date),
+    ...state.teamNotes.map((note) => note.date),
+    ...state.delayReviews.map((review) => review.currentDate || review.date || review.context?.date),
+    ...state.studentReports.flatMap((report) => [report.date, report.period?.startDate, report.period?.endDate])
+  ].map(normalizeDateKey).filter(Boolean)).sort();
+}
+
+function renderExportDateCalendar() {
+  if (!els.exportDateCalendar || !els.exportDateRangeText) return;
+  const dates = availableExportDates();
+  setAdminExportDefaults();
+
+  if (!dates.length) {
+    els.exportDateCalendar.innerHTML = `<div class="empty-state">추출 가능한 데이터 날짜가 없습니다.</div>`;
+    els.exportDateRangeText.textContent = "Firebase 데이터를 먼저 업로드하거나 불러오세요.";
+    return;
+  }
+
+  const startDate = normalizeDateKey(state.exportStartDate);
+  const endDate = normalizeDateKey(state.exportEndDate);
+  const minDate = dateFromKey(dates[0]);
+  const maxDate = dateFromKey(dates[dates.length - 1]);
+  const monthCursor = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+  const monthEnd = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
+  const availableSet = new Set(dates);
+  const monthBlocks = [];
+
+  while (monthCursor <= monthEnd) {
+    monthBlocks.push(renderExportCalendarMonth(new Date(monthCursor), availableSet, startDate, endDate));
+    monthCursor.setMonth(monthCursor.getMonth() + 1);
+  }
+
+  els.exportDateCalendar.innerHTML = monthBlocks.join("");
+  els.exportDateRangeText.textContent = endDate
+    ? `${formatDateKeyShort(startDate)} ~ ${formatDateKeyShort(endDate)} 기간 데이터를 추출합니다.`
+    : `${formatDateKeyShort(startDate)}부터 선택했습니다. 종료일을 선택하세요.`;
+
+  els.exportDateCalendar.querySelectorAll("[data-export-date]").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectExportDate(button.dataset.exportDate);
+    });
+  });
+}
+
+function renderExportCalendarMonth(monthDate, availableSet, startDate, endDate) {
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const first = new Date(year, month, 1);
+  const last = new Date(year, month + 1, 0);
+  const cells = [];
+
+  for (let i = 0; i < first.getDay(); i += 1) {
+    cells.push(`<span class="export-date-cell is-blank"></span>`);
+  }
+
+  for (let day = 1; day <= last.getDate(); day += 1) {
+    const date = new Date(year, month, day);
+    const key = dateKey(date);
+    const hasData = availableSet.has(key);
+    const isStart = key === startDate;
+    const isEnd = key === endDate;
+    const inRange = startDate && endDate && key >= startDate && key <= endDate;
+    const classes = [
+      "export-date-cell",
+      hasData ? "has-data" : "is-disabled",
+      inRange ? "is-in-range" : "",
+      isStart ? "is-start" : "",
+      isEnd ? "is-end" : "",
+      isOffDay(date) ? "is-off-day" : ""
+    ].filter(Boolean).join(" ");
+
+    cells.push(`
+      <button class="${classes}" type="button" data-export-date="${escapeHtml(key)}" ${hasData ? "" : "disabled"}>
+        ${escapeHtml(String(day))}
+      </button>
+    `);
+  }
+
+  return `
+    <section class="export-calendar-month">
+      <h4>${escapeHtml(String(year))}.${escapeHtml(String(month + 1).padStart(2, "0"))}</h4>
+      <div class="export-calendar-weekdays">
+        ${["일", "월", "화", "수", "목", "금", "토"].map((day) => `<span>${day}</span>`).join("")}
+      </div>
+      <div class="export-calendar-grid">
+        ${cells.join("")}
+      </div>
+    </section>
+  `;
+}
+
+function selectExportDate(date) {
+  const key = normalizeDateKey(date);
+  if (!key) return;
+
+  if (!state.exportStartDate || (state.exportStartDate && state.exportEndDate)) {
+    state.exportStartDate = key;
+    state.exportEndDate = "";
+  } else if (key < state.exportStartDate) {
+    state.exportEndDate = state.exportStartDate;
+    state.exportStartDate = key;
+  } else {
+    state.exportEndDate = key;
+  }
+
+  if (!state.exportEndDate) {
+    els.exportDateRangeText.textContent = `${formatDateKeyShort(state.exportStartDate)}부터 선택했습니다. 종료일을 선택하세요.`;
+  }
+  renderExportDateCalendar();
 }
 
 function filteredEntries() {
