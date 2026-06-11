@@ -2436,9 +2436,9 @@ function renderStudentReportPanel(selected) {
       <div class="report-toolbar">
         <div>
           <h2>${escapeHtml(selected)} 학생 보고서</h2>
-          <p>주간/마일스톤 종료일 JSON에 첨부된 보고서 데이터를 기준으로 표시합니다.</p>
+          <p>프로젝트·마일스톤·주간 보고서를 시간순으로 확인하고 HTML 문서로 저장합니다.</p>
         </div>
-        <button id="printReportButton" class="primary-button" type="button" ${filtered.length ? "" : "disabled"}>PDF 저장</button>
+        <button id="exportReportHtmlButton" class="primary-button" type="button" ${filtered.length ? "" : "disabled"}>HTML 저장</button>
       </div>
       <div class="report-filter-buttons" aria-label="보고서 종류 선택">
         ${[
@@ -2503,116 +2503,84 @@ function renderStudentReportDocument(report) {
     : report.reportType === "milestone"
       ? "마일스톤 보고서"
       : "주간 보고서";
-  const ganttPages = rows.length ? chunkReportItems(rows, 8) : [[]];
-  const taskPages = report.taskAnalysis.length ? chunkReportItems(report.taskAnalysis, 6) : [];
-  const totalPages = ganttPages.length + taskPages.length;
-  let pageNumber = 0;
   return `
     <article class="student-report-document">
-      ${ganttPages.map((pageRows, index) => {
-        pageNumber += 1;
-        return `
-          <section class="report-sheet ${index === 0 ? "report-sheet--overview" : ""}">
-            ${renderReportHeader(report, label, index === 0 ? "작업 개요" : "작업 흐름")}
-            ${index === 0 ? `
-              <section class="report-stat-grid">
-                ${renderReportStat("보고일", report.stats.reportedDays)}
-                ${renderReportStat("작업 수", report.stats.taskCount)}
-                ${renderReportStat("마감 작업", report.stats.deadlineTaskCount)}
-                ${renderReportStat("검토 이슈", report.stats.delayedIssueCount)}
-                ${renderReportStat("특이사항", report.stats.specialNoteCount)}
-              </section>
-              <section class="report-section report-summary-section">
-                <div class="report-section-title">
-                  <span>01</span>
-                  <h3>분석 요약</h3>
-                </div>
-                <p>${escapeHtml(report.summary || "등록된 분석 요약이 없습니다.")}</p>
-              </section>
-            ` : `
-              <div class="report-continuation">
-                <strong>개인 작업 흐름</strong>
-                <span>${index + 1} / ${ganttPages.length}</span>
-              </div>
-            `}
-            <section class="report-section report-gantt-section">
-              <div class="report-section-title">
-                <span>${index === 0 ? "02" : String(index + 2).padStart(2, "0")}</span>
-                <h3>개인 작업 간트차트</h3>
-              </div>
-              ${pageRows.length ? `
-                <div class="gantt-board report-gantt">
-                  ${renderGanttGroup("작업 흐름", pageRows, range, ticks)}
-                </div>
-              ` : `<div class="empty-state">간트차트 데이터가 없습니다.</div>`}
-            </section>
-            ${renderReportPageFooter(report, pageNumber, totalPages, false)}
-          </section>
-        `;
-      }).join("")}
-      ${taskPages.map((pageItems, index) => {
-        pageNumber += 1;
-        return `
-          <section class="report-sheet report-sheet--analysis">
-            ${renderReportHeader(report, label, "작업 분석")}
-            <div class="report-continuation">
-              <strong>세부 작업 기록</strong>
-              <span>${index + 1} / ${taskPages.length}</span>
+      <section class="report-sheet">
+        ${renderReportHeader(report, label, "작업 개요")}
+        <section class="report-stat-grid">
+          ${renderReportStat("보고일", report.stats.reportedDays)}
+          ${renderReportStat("작업 수", report.stats.taskCount)}
+          ${renderReportStat("마감 작업", report.stats.deadlineTaskCount)}
+          ${renderReportStat("검토 이슈", report.stats.delayedIssueCount)}
+          ${renderReportStat("특이사항", report.stats.specialNoteCount)}
+        </section>
+        <section class="report-section report-summary-section">
+          <div class="report-section-title">
+            <span>01</span>
+            <h3>분석 요약</h3>
+          </div>
+          <p>${escapeHtml(report.summary || "등록된 분석 요약이 없습니다.")}</p>
+        </section>
+        <section class="report-section report-gantt-section">
+          <div class="report-section-title">
+            <span>02</span>
+            <h3>개인 작업 간트차트</h3>
+          </div>
+          ${rows.length ? `
+            <div class="gantt-board report-gantt">
+              ${renderGanttGroup("작업 흐름", rows, range, ticks)}
             </div>
-            <section class="report-section report-analysis-section">
-              <div class="report-section-title">
-                <span>${String(ganttPages.length + index + 2).padStart(2, "0")}</span>
-                <h3>작업 분석</h3>
-              </div>
-              <div class="report-task-table-wrap">
-                <table class="report-task-table">
-                  <colgroup>
-                    <col class="report-task-title-column">
-                    <col class="report-task-period-column">
-                    <col class="report-task-deadline-column">
-                    <col class="report-task-status-column">
-                    <col class="report-task-evidence-column">
-                  </colgroup>
-                  <thead>
+          ` : `<div class="empty-state">간트차트 데이터가 없습니다.</div>`}
+        </section>
+        <section class="report-section report-analysis-section">
+          <div class="report-section-title">
+            <span>03</span>
+            <h3>작업 분석</h3>
+          </div>
+          ${report.taskAnalysis.length ? `
+            <div class="report-task-table-wrap">
+              <table class="report-task-table">
+                <colgroup>
+                  <col class="report-task-title-column">
+                  <col class="report-task-period-column">
+                  <col class="report-task-deadline-column">
+                  <col class="report-task-status-column">
+                  <col class="report-task-evidence-column">
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>작업</th>
+                    <th>진행 기간</th>
+                    <th>마감일</th>
+                    <th>상태</th>
+                    <th>보고 근거</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${report.taskAnalysis.map((item) => `
                     <tr>
-                      <th>작업</th>
-                      <th>진행 기간</th>
-                      <th>마감일</th>
-                      <th>상태</th>
-                      <th>보고 근거</th>
+                      <td>
+                        <strong>${escapeHtml(item.title)}</strong>
+                        ${item.note ? `<small>${escapeHtml(item.note)}</small>` : ""}
+                      </td>
+                      <td>${escapeHtml(formatDateKeyShort(item.startDate))} ~ ${escapeHtml(formatDateKeyShort(item.endDate))}</td>
+                      <td>${escapeHtml(formatDeadline(item.deadline))}</td>
+                      <td><span class="report-status ${reportStatusClass(item.status)}">${escapeHtml(item.status || "미지정")}</span></td>
+                      <td>${escapeHtml(item.evidenceDates.map(formatDateKeyShort).join(", "))}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    ${pageItems.map((item) => `
-                      <tr>
-                        <td>
-                          <strong>${escapeHtml(item.title)}</strong>
-                          ${item.note ? `<small>${escapeHtml(item.note)}</small>` : ""}
-                        </td>
-                        <td>${escapeHtml(formatDateKeyShort(item.startDate))} ~ ${escapeHtml(formatDateKeyShort(item.endDate))}</td>
-                        <td>${escapeHtml(formatDeadline(item.deadline))}</td>
-                        <td><span class="report-status ${reportStatusClass(item.status)}">${escapeHtml(item.status || "미지정")}</span></td>
-                        <td>${escapeHtml(item.evidenceDates.map(formatDateKeyShort).join(", "))}</td>
-                      </tr>
-                    `).join("")}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-            ${renderReportPageFooter(report, pageNumber, totalPages, true)}
-          </section>
-        `;
-      }).join("")}
+                  `).join("")}
+                </tbody>
+              </table>
+            </div>
+          ` : `<div class="empty-state">작업 분석 데이터가 없습니다.</div>`}
+        </section>
+        <footer class="report-page-footer">
+          <span>${escapeHtml(report.notice)}</span>
+          <strong>${escapeHtml(formatDateKeyShort(report.period.startDate))} ~ ${escapeHtml(formatDateKeyShort(report.period.endDate))}</strong>
+        </footer>
+      </section>
     </article>
   `;
-}
-
-function chunkReportItems(items, pageSize) {
-  const chunks = [];
-  for (let index = 0; index < items.length; index += pageSize) {
-    chunks.push(items.slice(index, index + pageSize));
-  }
-  return chunks;
 }
 
 function renderReportHeader(report, label, sectionLabel) {
@@ -2632,15 +2600,6 @@ function renderReportHeader(report, label, sectionLabel) {
         ${report.milestone?.name ? `<small>${escapeHtml(report.milestone.name)} · ${escapeHtml(formatDateKeyShort(report.milestone.startDate))} ~ ${escapeHtml(formatDateKeyShort(report.milestone.endDate))}</small>` : ""}
       </div>
     </header>
-  `;
-}
-
-function renderReportPageFooter(report, pageNumber, totalPages, showNotice) {
-  return `
-    <footer class="report-page-footer">
-      <span>${showNotice ? escapeHtml(report.notice) : `${escapeHtml(report.team)} ${escapeHtml(report.student)} 작업 보고서`}</span>
-      <strong>${pageNumber} / ${totalPages}</strong>
-    </footer>
   `;
 }
 
@@ -2705,7 +2664,80 @@ function bindReportControls() {
       renderStudentHistory();
     });
   });
-  document.querySelector("#printReportButton")?.addEventListener("click", () => window.print());
+  document.querySelector("#exportReportHtmlButton")?.addEventListener("click", exportSelectedStudentReportsHtml);
+}
+
+async function exportSelectedStudentReportsHtml() {
+  const student = state.selectedStudent;
+  const reports = studentReportsFor(student)
+    .filter((report) => state.reportFilter === "all" || report.reportType === state.reportFilter);
+  if (!student || !reports.length) return;
+
+  const button = document.querySelector("#exportReportHtmlButton");
+  if (button) {
+    button.disabled = true;
+    button.textContent = "HTML 생성 중";
+  }
+
+  try {
+    const stylesheet = await fetch("./styles.css").then((response) => {
+      if (!response.ok) throw new Error("보고서 스타일을 불러오지 못했습니다.");
+      return response.text();
+    });
+    const generatedAt = new Date().toLocaleString("ko-KR");
+    const title = `${state.historyTeam} ${student} 프로젝트 작업 보고서`;
+    const documentHtml = `<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(title)}</title>
+  <style>${stylesheet.replace(/<\/style/gi, "<\\/style")}</style>
+</head>
+<body class="html-report-export">
+  <header class="html-report-header">
+    <div>
+      <p>SMART4 LAST PROJECT</p>
+      <h1>${escapeHtml(student)} 프로젝트 작업 보고서</h1>
+      <span>${escapeHtml(state.historyTeam)} · ${escapeHtml(reports[0]?.part || "파트 미지정")}</span>
+    </div>
+    <div class="html-report-meta">
+      <span>생성일</span>
+      <strong>${escapeHtml(generatedAt)}</strong>
+      <small>프로젝트 및 마일스톤 시간순 정렬</small>
+    </div>
+  </header>
+  <main class="report-document-list">
+    ${reports.map(renderStudentReportDocument).join("")}
+  </main>
+</body>
+</html>`;
+    downloadTextFile(
+      `${slug(state.historyTeam)}_${slug(student)}_프로젝트_작업보고서.html`,
+      documentHtml,
+      "text/html;charset=utf-8"
+    );
+  } catch (error) {
+    console.error(error);
+    window.alert("HTML 보고서를 생성하지 못했습니다. 잠시 후 다시 시도하세요.");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "HTML 저장";
+    }
+  }
+}
+
+function downloadTextFile(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function renderChroniclePanel(selected, history) {
