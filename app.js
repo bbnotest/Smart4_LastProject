@@ -2443,8 +2443,9 @@ function renderStudentReportPanel(selected) {
       <div class="report-filter-buttons" aria-label="보고서 종류 선택">
         ${[
           ["all", "전체"],
-          ["weekly", "주간"],
-          ["milestone", "마일스톤"]
+          ["project", "프로젝트"],
+          ["milestone", "마일스톤"],
+          ["weekly", "주간"]
         ].map(([key, label]) => `
           <button class="report-filter-button ${state.reportFilter === key ? "is-active" : ""}" type="button" data-report-filter="${escapeHtml(key)}">
             ${escapeHtml(label)}
@@ -2463,22 +2464,45 @@ function renderStudentReportPanel(selected) {
 function studentReportsFor(student) {
   return state.studentReports
     .filter((report) => report.student === student && report.team === state.historyTeam)
-    .sort((a, b) => {
-      const typeDiff = reportTypeOrder(a.reportType) - reportTypeOrder(b.reportType);
-      if (typeDiff) return typeDiff;
-      return (b.period?.endDate || b.date || "").localeCompare(a.period?.endDate || a.date || "");
-    });
+    .sort(compareStudentReports);
+}
+
+function compareStudentReports(a, b) {
+  const projectDiff = Number(a.reportType !== "project") - Number(b.reportType !== "project");
+  if (projectDiff) return projectDiff;
+
+  const aMilestoneStart = normalizeDateKey(a.milestone?.startDate || a.period?.startDate || a.date);
+  const bMilestoneStart = normalizeDateKey(b.milestone?.startDate || b.period?.startDate || b.date);
+  const milestoneDiff = aMilestoneStart.localeCompare(bMilestoneStart);
+  if (milestoneDiff) return milestoneDiff;
+
+  const typeDiff = reportTypeOrder(a.reportType) - reportTypeOrder(b.reportType);
+  if (typeDiff) return typeDiff;
+
+  const periodDiff = normalizeDateKey(a.period?.startDate || a.date)
+    .localeCompare(normalizeDateKey(b.period?.startDate || b.date));
+  if (periodDiff) return periodDiff;
+
+  return normalizeDateKey(a.period?.endDate || a.date)
+    .localeCompare(normalizeDateKey(b.period?.endDate || b.date));
 }
 
 function reportTypeOrder(type) {
-  return type === "milestone" ? 0 : type === "weekly" ? 1 : 2;
+  if (type === "project") return 0;
+  if (type === "milestone") return 1;
+  if (type === "weekly") return 2;
+  return 3;
 }
 
 function renderStudentReportDocument(report) {
   const range = reportRange(report);
   const ticks = ganttTicks(range);
   const rows = reportGanttRows(report);
-  const label = report.reportType === "milestone" ? "마일스톤 보고서" : "주간 보고서";
+  const label = report.reportType === "project"
+    ? "프로젝트 보고서"
+    : report.reportType === "milestone"
+      ? "마일스톤 보고서"
+      : "주간 보고서";
   const ganttPages = rows.length ? chunkReportItems(rows, 8) : [[]];
   const taskPages = report.taskAnalysis.length ? chunkReportItems(report.taskAnalysis, 6) : [];
   const totalPages = ganttPages.length + taskPages.length;
