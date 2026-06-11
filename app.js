@@ -111,6 +111,12 @@ const els = {
   reportTab: document.querySelector("#reportTab"),
   studentSearchInput: document.querySelector("#studentSearchInput"),
   jsonInput: document.querySelector("#jsonInput"),
+  reportJsonInput: document.querySelector("#reportJsonInput"),
+  exportStartDate: document.querySelector("#exportStartDate"),
+  exportEndDate: document.querySelector("#exportEndDate"),
+  exportTeamSelect: document.querySelector("#exportTeamSelect"),
+  exportFirebaseButton: document.querySelector("#exportFirebaseButton"),
+  exportMessage: document.querySelector("#exportMessage"),
   uploadMessage: document.querySelector("#uploadMessage"),
   adminStatus: document.querySelector("#adminStatus"),
   teamFilterButtons: document.querySelector("#teamFilterButtons"),
@@ -233,6 +239,26 @@ els.jsonInput.addEventListener("change", async (event) => {
   event.target.value = "";
 });
 
+els.reportJsonInput?.addEventListener("change", async (event) => {
+  const files = Array.from(event.target.files || []);
+  if (!files.length) return;
+  if (!isAdmin()) {
+    alert("관리자 계정만 보고서 JSON을 업로드할 수 있습니다.");
+    event.target.value = "";
+    return;
+  }
+  await uploadReportJsonFiles(files);
+  event.target.value = "";
+});
+
+els.exportFirebaseButton?.addEventListener("click", async () => {
+  if (!isAdmin()) {
+    alert("관리자 계정만 Firebase 데이터를 추출할 수 있습니다.");
+    return;
+  }
+  await exportFirebaseDataByPeriod();
+});
+
 function showLogin() {
   els.authView.classList.remove("is-hidden");
   els.dashboardView.classList.add("is-hidden");
@@ -242,6 +268,7 @@ function showDashboard() {
   els.authView.classList.add("is-hidden");
   els.dashboardView.classList.remove("is-hidden");
   syncAdminAccess();
+  setAdminExportDefaults();
   render();
 }
 
@@ -267,6 +294,17 @@ function syncAdminAccess() {
   }
   if (!allowed && state.view === "admin") {
     setView("team");
+  }
+}
+
+function setAdminExportDefaults() {
+  const today = todayKey();
+  const selectedDate = state.filters.date !== "all" ? state.filters.date : today;
+  if (els.exportStartDate && !els.exportStartDate.value) {
+    els.exportStartDate.value = selectedDate;
+  }
+  if (els.exportEndDate && !els.exportEndDate.value) {
+    els.exportEndDate.value = selectedDate;
   }
 }
 
@@ -377,32 +415,23 @@ async function importTeamNotes(notes, options = {}) {
 }
 
 async function importStudentReports(reports, options = {}) {
-  if (!options.team || !options.date) return;
+  if (!reports.length) return;
 
-  if (options.overwrite) {
+  if (options.overwrite && options.team && options.date) {
     await removeStudentReportsForTeamDate(options.team, options.date);
   }
 
-  if (!reports.length) return;
-
   if (firebaseReady) {
-    await Promise.all(reports.map((report, index) => {
-      const id = [
-        report.team,
-        report.date,
-        report.student,
-        report.reportType,
-        report.period?.startDate,
-        report.period?.endDate,
-        index + 1
-      ].map(slug).join("_");
+    await Promise.all(reports.map((report) => {
+      const id = studentReportId(report);
       return fb.setDoc(fb.doc(db, "scrumStudentReports", id), report, { merge: true });
     }));
     return;
   }
 
-  state.studentReports = state.studentReports.filter((report) => !(report.team === options.team && report.date === options.date));
-  state.studentReports.push(...reports);
+  const existing = new Map(state.studentReports.map((report) => [studentReportId(report), report]));
+  reports.forEach((report) => existing.set(studentReportId(report), report));
+  state.studentReports = Array.from(existing.values());
 }
 
 async function removeEntriesForTeamDate(team, date) {
@@ -494,6 +523,111 @@ async function uploadJsonFiles(files) {
   }
 }
 
+async function uploadReportJsonFiles(files) {
+  try {
+    setUploadMessage(`${files.length}개 보고서 파일을 업로드 중입니다...`);
+    let total = 0;
+    for (const file of files) {
+      const parsed = JSON.parse(await file.text());
+      const reports = normalizeStudentReports(parsed);
+      if (!reports.length) {
+        throw new Error(`보고서 데이터가 없습니다: ${file.name}`);
+      }
+      await importStudentReports(reports);
+      total += reports.length;
+    }
+    if (firebaseReady) {
+      await loadRemoteData();
+    } else {
+      render();
+    }
+    setUploadMessage(`보고서 ${total}건 업로드를 완료했습니다.`);
+  } catch (error) {
+    if (error?.code === "permission-denied") {
+      setUploadMessage(`보고서 업로드 권한이 없습니다. 현재 계정: ${state.user?.email || "없음"}`, true);
+      return;
+    }
+    setUploadMessage(`보고서 업로드 중 오류가 발생했습니다. ${error?.message || "JSON 형식을 확인하세요."}`, true);
+  }
+}
+
+async function exportFirebaseDataByPeriod() {
+  const startDate = normalizeDateKey(els.exportStartDate?.value);
+  const endDate = normalizeDateKey(els.exportEndDate?.value);
+  const team = clean(els.exportTeamSelect?.value || "all");
+
+  if (!startDate || !endDate) {
+    setExportMessage("시작일과 종료일을 선택하세요.", true);
+    return;
+  }
+  if (startDate > endDate) {
+    setExportMessage("시작일은 종료일보다 늦을 수 없습니다.", true);
+    return;
+  }
+
+  const teams = team === "all" ? monitoredTeams : [team];
+  if (firebaseReady) {
+    setExportMessage("Firebase 최신 데이터를 불러오는 중입니다...");
+    await loadRemoteData();
+  }
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    source: "firebase-admin-export",
+    period: {
+      startDate,
+      endDate
+    },
+    teams,
+    scrumEntries: state.entries.filter((entry) => {
+      return teams.includes(entry.team) && dateInRange(entry.date, startDate, endDate);
+    }).map(sanitizeForExport),
+    scrumTeamNotes: state.teamNotes.filter((note) => {
+      return teams.includes(note.team) && dateInRange(note.date, startDate, endDate);
+    }).map(sanitizeForExport),
+    scrumDelayReviews: state.delayReviews.filter((review) => {
+      const reviewTeam = clean(review.team || review.context?.team);
+      const reviewDate = clean(review.currentDate || review.date || review.context?.date);
+      return (!reviewTeam || teams.includes(reviewTeam)) && dateInRange(reviewDate, startDate, endDate);
+    }).map(sanitizeForExport),
+    scrumStudentReports: state.studentReports.filter((report) => {
+      return teams.includes(report.team) && reportIntersectsPeriod(report, startDate, endDate);
+    }).map(sanitizeForExport)
+  };
+
+  const filename = `firebase-export_${startDate}_${endDate}_${team === "all" ? "all-teams" : slug(team)}.json`;
+  downloadJson(filename, payload);
+  setExportMessage(`데이터 추출 완료: 작업 ${payload.scrumEntries.length}건, 특이사항 ${payload.scrumTeamNotes.length}건, 검토 ${payload.scrumDelayReviews.length}건, 보고서 ${payload.scrumStudentReports.length}건`);
+}
+
+function setExportMessage(message, isError = false) {
+  if (!els.exportMessage) return;
+  els.exportMessage.textContent = message;
+  els.exportMessage.style.color = isError ? "var(--danger)" : "var(--muted)";
+}
+
+function downloadJson(filename, payload) {
+  const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function sanitizeForExport(value) {
+  if (value == null) return value;
+  if (typeof value?.toDate === "function") return value.toDate().toISOString();
+  if (value instanceof Date) return value.toISOString();
+  if (Array.isArray(value)) return value.map(sanitizeForExport);
+  if (typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, sanitizeForExport(item)]));
+  }
+  return value;
+}
+
 function setUploadMessage(message, isError = false) {
   if (!els.uploadMessage) return;
   els.uploadMessage.textContent = message;
@@ -542,7 +676,11 @@ function normalizeTeamNotes(payload, override = {}) {
 }
 
 function normalizeStudentReports(payload, override = {}) {
-  const rows = Array.isArray(payload?.studentReports) ? payload.studentReports : [];
+  const rows = Array.isArray(payload?.studentReports)
+    ? payload.studentReports
+    : Array.isArray(payload?.scrumStudentReports)
+      ? payload.scrumStudentReports
+      : [];
   return rows.map((row) => {
     const period = normalizeReportPeriod(row.period);
     const milestone = normalizeReportPeriod(row.milestone);
@@ -2557,6 +2695,28 @@ function normalizedTaskTitle(value) {
 
 function slug(value) {
   return clean(value).replace(/[^a-zA-Z0-9가-힣_-]+/g, "-");
+}
+
+function studentReportId(report) {
+  return [
+    report.team,
+    report.student,
+    report.reportType,
+    report.period?.startDate,
+    report.period?.endDate
+  ].map(slug).join("_");
+}
+
+function dateInRange(value, startDate, endDate) {
+  const key = normalizeDateKey(value);
+  return Boolean(key && key >= startDate && key <= endDate);
+}
+
+function reportIntersectsPeriod(report, startDate, endDate) {
+  const reportStart = normalizeDateKey(report.period?.startDate || report.date);
+  const reportEnd = normalizeDateKey(report.period?.endDate || report.date);
+  if (!reportStart || !reportEnd) return dateInRange(report.date, startDate, endDate);
+  return reportStart <= endDate && reportEnd >= startDate;
 }
 
 function isOverdue(value) {

@@ -97,13 +97,58 @@
         <div class="admin-panel">
           <h2>관리자 업로드</h2>
           <p id="adminStatus" class="admin-status"></p>
-          <p>파일명은 <strong>yyyy-mm-dd_team번호.json</strong> 형식이어야 합니다. 같은 날짜와 팀의 데이터는 다시 업로드하면 덮어씌워집니다.</p>
-          <div class="upload-box admin-upload">
-            <label class="file-button">
-              JSON 업로드
-              <input id="jsonInput" type="file" accept="application/json,.json" multiple>
-            </label>
-          </div>
+          <section class="admin-section">
+            <h3>기간 데이터 추출</h3>
+            <p>보고서 제작 전 Firebase에 저장된 운영 데이터를 기간 기준으로 내려받습니다.</p>
+            <div class="admin-form-grid">
+              <label>
+                시작일
+                <input id="exportStartDate" type="date">
+              </label>
+              <label>
+                종료일
+                <input id="exportEndDate" type="date">
+              </label>
+              <label>
+                팀
+                <select id="exportTeamSelect">
+                  <option value="all">전체 팀</option>
+                  <option value="1팀">1팀</option>
+                  <option value="2팀">2팀</option>
+                  <option value="3팀">3팀</option>
+                  <option value="4팀">4팀</option>
+                  <option value="5팀">5팀</option>
+                  <option value="6팀">6팀</option>
+                  <option value="7팀">7팀</option>
+                  <option value="8팀">8팀</option>
+                </select>
+              </label>
+            </div>
+            <button id="exportFirebaseButton" class="primary-button" type="button">Firebase 데이터 추출</button>
+            <p id="exportMessage" class="upload-message" role="status"></p>
+          </section>
+
+          <section class="admin-section">
+            <h3>데일리 스크럼 JSON 업로드</h3>
+            <p>파일명은 <strong>yyyy-mm-dd_team번호.json</strong> 형식이어야 합니다. 같은 날짜와 팀의 데이터는 다시 업로드하면 덮어씌워집니다.</p>
+            <div class="upload-box admin-upload">
+              <label class="file-button">
+                데일리 JSON 업로드
+                <input id="jsonInput" type="file" accept="application/json,.json" multiple>
+              </label>
+            </div>
+          </section>
+
+          <section class="admin-section">
+            <h3>보고서 JSON 업로드</h3>
+            <p>Codex가 생성한 <strong>studentReports</strong> 데이터만 업로드합니다. 기존 데일리 작업 데이터는 변경하지 않습니다.</p>
+            <div class="upload-box admin-upload">
+              <label class="file-button">
+                보고서 JSON 업로드
+                <input id="reportJsonInput" type="file" accept="application/json,.json" multiple>
+              </label>
+            </div>
+          </section>
           <p id="uploadMessage" class="upload-message" role="status"></p>
         </div>
       </section>

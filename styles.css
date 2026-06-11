@@ -1668,6 +1668,33 @@ textarea:focus {
   color: var(--muted);
 }
 
+.admin-section {
+  display: grid;
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.admin-section:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.admin-section h3,
+.admin-section p {
+  margin: 0;
+}
+
+.admin-section h3 {
+  font-size: 15px;
+}
+
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .admin-status {
   padding: 10px 12px;
   background: var(--panel-soft);
@@ -1983,6 +2010,7 @@ textarea:focus {
   .filters,
   .history-layout,
   .student-history-toolbar,
+  .admin-form-grid,
   .personal-work-layout,
   .roster-section,
   .slot-track,
