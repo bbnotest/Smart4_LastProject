@@ -24,9 +24,32 @@ API 키를 비밀번호처럼 신뢰하지 말고 아래 설정을 모두 적용
 3. `firebase-config.js`의 `appCheckSiteKey`에 사이트 키를 입력한다. 사이트 키는 공개 값이다.
 4. App Check 요청 지표를 확인한 뒤 Firestore 적용을 활성화한다.
 
+## GitHub Actions 배포
+
+1. GitHub 저장소의 **Settings > Secrets and variables > Actions**로 이동한다.
+2. 저장소 Secret `FIREBASE_CONFIG_JSON`을 만들고 Firebase 설정 객체를 JSON으로 입력한다.
+3. **Settings > Pages > Build and deployment**의 Source를 **GitHub Actions**로 선택한다.
+4. `Deploy GitHub Pages` Actions를 실행한다.
+
+Secret 값은 아래 형식이며 `window.firebaseConfig =` 문장 없이 JSON 객체만 입력한다.
+
+```json
+{
+  "apiKey": "...",
+  "authDomain": "...",
+  "projectId": "...",
+  "storageBucket": "...",
+  "messagingSenderId": "...",
+  "appId": "...",
+  "measurementId": "...",
+  "appCheckSiteKey": ""
+}
+```
+
 ## 주의
 
 - GitHub 저장소에서 `firebase-config.js`를 삭제해도 배포된 웹페이지에서는 설정값을 확인할 수 있다.
+- Actions Secret은 Git 이력 노출을 막지만 브라우저에 전달된 Firebase 웹 설정을 비밀로 만들지는 않는다.
 - Git 기록에는 이전 키가 남아 있으므로 키 교체가 우선이다.
 - 기록 삭제를 위한 강제 푸시는 협업자의 저장소를 깨뜨릴 수 있어 별도 합의 후 진행한다.
 - Firebase 설정 객체에 서비스 계정 키, 개인 키, 관리자 SDK 인증 파일을 절대 넣지 않는다.

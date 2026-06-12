@@ -1,0 +1,82 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Firebase config secret
+        env:
+          FIREBASE_CONFIG_JSON: ${{ secrets.FIREBASE_CONFIG_JSON }}
+        run: |
+          if [ -z "$FIREBASE_CONFIG_JSON" ]; then
+            echo "::error::Repository secret FIREBASE_CONFIG_JSON is not configured."
+            exit 1
+          fi
+
+      - name: Build static site
+        env:
+          FIREBASE_CONFIG_JSON: ${{ secrets.FIREBASE_CONFIG_JSON }}
+        run: |
+          mkdir -p dist
+          cp index.html app.js styles.css dist/
+          node <<'NODE'
+          const fs = require("fs");
+          const required = [
+            "apiKey",
+            "authDomain",
+            "projectId",
+            "storageBucket",
+            "messagingSenderId",
+            "appId"
+          ];
+          let config;
+          try {
+            config = JSON.parse(process.env.FIREBASE_CONFIG_JSON);
+          } catch {
+            console.error("FIREBASE_CONFIG_JSON must be valid JSON.");
+            process.exit(1);
+          }
+          const missing = required.filter((key) => !config[key]);
+          if (missing.length) {
+            console.error(`Missing Firebase config keys: ${missing.join(", ")}`);
+            process.exit(1);
+          }
+          fs.writeFileSync(
+            "dist/firebase-config.js",
+            `window.firebaseConfig = ${JSON.stringify(config, null, 2)};\n`
+          );
+          NODE
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
