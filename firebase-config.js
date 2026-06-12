@@ -5,5 +5,6 @@ window.firebaseConfig = {
   storageBucket: "smart4lastproject.firebasestorage.app",
   messagingSenderId: "627801409844",
   appId: "1:627801409844:web:c5a3f40b65732e7c56fd61",
-  measurementId: "G-B4NNSW781M"
+  measurementId: "G-B4NNSW781M",
+  appCheckSiteKey: ""
 };

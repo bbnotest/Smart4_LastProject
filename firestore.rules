@@ -1,0 +1,43 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email == "안중재@smart.com";
+    }
+
+    function isGuest() {
+      return request.auth != null
+        && request.auth.token.email == "기획자@smart.com";
+    }
+
+    function isApprovedUser() {
+      return isAdmin() || isGuest();
+    }
+
+    match /scrumEntries/{document} {
+      allow read: if isApprovedUser();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /scrumTeamNotes/{document} {
+      allow read: if isApprovedUser();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /scrumDelayReviews/{document} {
+      allow read: if isApprovedUser();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /scrumStudentReports/{document} {
+      allow read: if isApprovedUser();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

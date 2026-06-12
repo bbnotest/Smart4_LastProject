@@ -140,6 +140,12 @@ let fb = null;
 if (firebaseReady) {
   fb = await loadFirebase();
   const app = fb.initializeApp(config);
+  if (config.appCheckSiteKey) {
+    fb.initializeAppCheck(app, {
+      provider: new fb.ReCaptchaEnterpriseProvider(config.appCheckSiteKey),
+      isTokenAutoRefreshEnabled: true
+    });
+  }
   auth = fb.getAuth(app);
   db = fb.getFirestore(app);
   fb.onAuthStateChanged(auth, async (user) => {
@@ -3123,10 +3129,12 @@ function todayKey() {
 
 async function loadFirebase() {
   const appModule = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js");
+  const appCheckModule = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app-check.js");
   const authModule = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js");
   const firestoreModule = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js");
   return {
     ...appModule,
+    ...appCheckModule,
     ...authModule,
     ...firestoreModule
   };
