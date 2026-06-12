@@ -2501,18 +2501,29 @@ function reportTypeOrder(type) {
   return 3;
 }
 
-function renderStudentReportDocument(report) {
+function reportTypeLabel(type) {
+  if (type === "project") return "프로젝트 개요";
+  if (type === "milestone") return "마일스톤 개요";
+  return "주간 분석";
+}
+
+function reportAnchor(report, index = 0) {
+  return `report-${slug(report.reportType || "report")}-${slug(report.period?.startDate || report.date)}-${index + 1}`;
+}
+
+function renderStudentReportDocument(report, index = 0) {
   const range = reportRange(report);
   const ticks = ganttTicks(range);
   const rows = reportGanttRows(report);
-  const label = report.reportType === "project"
-    ? "프로젝트 보고서"
-    : report.reportType === "milestone"
-      ? "마일스톤 보고서"
-      : "주간 보고서";
+  const label = reportTypeLabel(report.reportType);
+  const anchor = reportAnchor(report, index);
   return `
-    <article class="student-report-document">
+    <article id="${escapeHtml(anchor)}" class="student-report-document" data-report-type="${escapeHtml(report.reportType || "weekly")}">
       <section class="report-sheet">
+        <div class="report-chapter-line">
+          <span>${String(index + 1).padStart(2, "0")}</span>
+          <p>${escapeHtml(label)}</p>
+        </div>
         ${renderReportHeader(report, label, "작업 개요")}
         <section class="report-stat-grid">
           ${renderReportStat("보고일", report.stats.reportedDays)}
@@ -2694,6 +2705,18 @@ async function exportSelectedStudentReportsHtml() {
     });
     const generatedAt = new Date().toLocaleString("ko-KR");
     const title = `${state.historyTeam} ${student} 프로젝트 작업 보고서`;
+    const totalTasks = reports.reduce((sum, report) => sum + Number(report.stats?.taskCount || 0), 0);
+    const totalReportedDays = Math.max(...reports.map((report) => Number(report.stats?.reportedDays || 0)), 0);
+    const totalIssues = reports.reduce((sum, report) => sum + Number(report.stats?.delayedIssueCount || 0), 0);
+    const reportStart = reports
+      .map((report) => normalizeDateKey(report.period?.startDate || report.date))
+      .filter(Boolean)
+      .sort()[0];
+    const reportEnd = reports
+      .map((report) => normalizeDateKey(report.period?.endDate || report.date))
+      .filter(Boolean)
+      .sort()
+      .at(-1);
     const documentHtml = `<!doctype html>
 <html lang="ko">
 <head>
@@ -2707,17 +2730,50 @@ async function exportSelectedStudentReportsHtml() {
     <div>
       <p>SMART4 LAST PROJECT</p>
       <h1>${escapeHtml(student)} 프로젝트 작업 보고서</h1>
-      <span>${escapeHtml(state.historyTeam)} · ${escapeHtml(reports[0]?.part || "파트 미지정")}</span>
+      <span>${escapeHtml(state.historyTeam)} · ${escapeHtml(reports[0]?.part || "파트 미지정")} · ${escapeHtml(formatDateKeyShort(reportStart))} ~ ${escapeHtml(formatDateKeyShort(reportEnd))}</span>
     </div>
     <div class="html-report-meta">
       <span>생성일</span>
       <strong>${escapeHtml(generatedAt)}</strong>
-      <small>프로젝트 및 마일스톤 시간순 정렬</small>
+      <small>보고된 데일리 스크럼 기준</small>
     </div>
   </header>
-  <main class="report-document-list">
-    ${reports.map(renderStudentReportDocument).join("")}
-  </main>
+  <section class="html-report-overview">
+    <div>
+      <span>REPORT OVERVIEW</span>
+      <h2>프로젝트 작업 흐름 요약</h2>
+      <p>프로젝트 개요부터 마일스톤과 주간 분석까지 시간순으로 정리했습니다. 왼쪽 목차에서 원하는 기간으로 바로 이동할 수 있습니다.</p>
+    </div>
+    <dl>
+      <div><dt>보고서</dt><dd>${reports.length}</dd></div>
+      <div><dt>보고일</dt><dd>${totalReportedDays}</dd></div>
+      <div><dt>작업 기록</dt><dd>${totalTasks}</dd></div>
+      <div><dt>검토 이슈</dt><dd>${totalIssues}</dd></div>
+    </dl>
+  </section>
+  <div class="html-report-layout">
+    <aside class="html-report-index">
+      <div class="html-report-index-head">
+        <span>CONTENTS</span>
+        <strong>보고서 목차</strong>
+      </div>
+      <nav>
+        ${reports.map((report, index) => `
+          <a href="#${escapeHtml(reportAnchor(report, index))}">
+            <span>${String(index + 1).padStart(2, "0")}</span>
+            <div>
+              <strong>${escapeHtml(report.period?.label || report.milestone?.name || report.date)}</strong>
+              <small>${escapeHtml(reportTypeLabel(report.reportType))} · ${escapeHtml(formatDateKeyShort(report.period?.startDate))} ~ ${escapeHtml(formatDateKeyShort(report.period?.endDate))}</small>
+            </div>
+          </a>
+        `).join("")}
+      </nav>
+      <p>본 문서는 AI가 데일리 스크럼을 기준으로 정리한 참고 자료입니다.</p>
+    </aside>
+    <main class="report-document-list">
+      ${reports.map(renderStudentReportDocument).join("")}
+    </main>
+  </div>
 </body>
 </html>`;
     downloadTextFile(
