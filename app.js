@@ -1,7 +1,7 @@
 const config = window.firebaseConfig || {};
 const firebaseReady = Boolean(config.apiKey && config.projectId && config.authDomain);
 const emailDomain = "@smart.com";
-const adminEmails = ["안중재@smart.com"];
+const adminEmails = ["안중재@smart.com", "양윤석@smart.com"];
 const guestEmails = ["기획자@smart.com"];
 const monitoredTeams = ["1팀", "2팀", "3팀", "4팀", "5팀", "6팀", "7팀", "8팀"];
 const ganttPeriods = [
@@ -105,6 +105,7 @@ const els = {
   teamTab: document.querySelector("#teamTab"),
   studentTab: document.querySelector("#studentTab"),
   adminTab: document.querySelector("#adminTab"),
+  userStatus: document.querySelector("#userStatus"),
   teamOverviewTab: document.querySelector("#teamOverviewTab"),
   teamDailyTab: document.querySelector("#teamDailyTab"),
   teamIssueTab: document.querySelector("#teamIssueTab"),
@@ -296,9 +297,15 @@ function setView(view) {
 
 function syncAdminAccess() {
   const allowed = isAdmin();
+  const guest = isGuest();
   els.adminTab.classList.toggle("is-hidden", !allowed);
+  if (els.userStatus) {
+    const email = state.user?.email || "없음";
+    const role = allowed ? "관리자" : guest ? "게스트" : "일반";
+    els.userStatus.textContent = `${email} · ${role}`;
+  }
   if (els.adminStatus) {
-    els.adminStatus.textContent = `현재 계정: ${state.user?.email || "없음"} · 관리자 권한: ${allowed ? "확인됨" : "없음"}${isGuest() ? " · 게스트 읽기 전용" : ""}`;
+    els.adminStatus.textContent = `현재 계정: ${state.user?.email || "없음"} · 관리자 권한: ${allowed ? "확인됨" : "없음"}${guest ? " · 게스트 읽기 전용" : ""}`;
   }
   if (!allowed && state.view === "admin") {
     setView("team");
@@ -3130,22 +3137,26 @@ function escapeHtml(value) {
 }
 
 function buildEmail(value) {
-  const loginId = clean(value).replace(/\s/g, "");
+  const loginId = normalizeEmail(clean(value).replace(/\s/g, ""));
   if (!loginId) return "";
   if (loginId.includes("@")) {
-    return loginId.toLowerCase();
+    return loginId;
   }
-  return `${loginId}${emailDomain}`.toLowerCase();
+  return normalizeEmail(`${loginId}${emailDomain}`);
 }
 
 function isAdmin() {
-  const email = clean(state.user?.email).toLowerCase();
-  return adminEmails.map((item) => item.toLowerCase()).includes(email);
+  const email = normalizeEmail(state.user?.email);
+  return adminEmails.map(normalizeEmail).includes(email);
 }
 
 function isGuest() {
-  const email = clean(state.user?.email).toLowerCase();
-  return guestEmails.map((item) => item.toLowerCase()).includes(email);
+  const email = normalizeEmail(state.user?.email);
+  return guestEmails.map(normalizeEmail).includes(email);
+}
+
+function normalizeEmail(value) {
+  return clean(value).normalize("NFC").toLowerCase();
 }
 
 function parseScrumFileName(fileName) {

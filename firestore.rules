@@ -2,9 +2,14 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isSignedInSmartUser() {
+      return request.auth != null
+        && request.auth.token.email.matches('.*@smart[.]com$');
+    }
+
     function isAdmin() {
       return request.auth != null
-        && request.auth.token.email == "안중재@smart.com";
+        && request.auth.token.email in ["안중재@smart.com", "양윤석@smart.com"];
     }
 
     function isGuest() {
@@ -12,27 +17,24 @@ service cloud.firestore {
         && request.auth.token.email == "기획자@smart.com";
     }
 
-    function isApprovedUser() {
-      return isAdmin() || isGuest();
-    }
-
     match /scrumEntries/{document} {
-      allow read: if isApprovedUser();
+      allow read: if isSignedInSmartUser();
       allow create, update, delete: if isAdmin();
     }
 
     match /scrumTeamNotes/{document} {
-      allow read: if isApprovedUser();
+      allow read: if isSignedInSmartUser();
       allow create, update, delete: if isAdmin();
     }
 
     match /scrumDelayReviews/{document} {
-      allow read: if isApprovedUser();
-      allow create, update, delete: if isAdmin();
+      allow read: if isSignedInSmartUser();
+      allow create, update: if isSignedInSmartUser() && !isGuest();
+      allow delete: if isAdmin();
     }
 
-    match /scrumStudentReports/{document} {
-      allow read: if isApprovedUser();
+    match /scrumStudentReports/{reportId} {
+      allow read: if isSignedInSmartUser();
       allow create, update, delete: if isAdmin();
     }
 
